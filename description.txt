@@ -1,0 +1,5 @@
+The 'Agents' plugin generates host / service configs for snclient agents checks
+automatically. It uses and requires the 'conf' plugin.
+
+Url: agents.cgi
+Depends: conf

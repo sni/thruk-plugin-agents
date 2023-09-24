@@ -1,0 +1,176 @@
+﻿[% PROCESS _header.tt %]
+[% PROCESS _message.tt %]
+[% PROCESS _blocks.tt %]
+
+[% BLOCK _check_row %]
+  <tr>
+    <th>
+      [% check.name %]
+      <input type="hidden" name="check.[% check.id %]" value="[% check.exists %]">
+    </th>
+    <td></td>
+    <td>
+      <div class="flexrow flex-nowrap gap-x-1">
+        <button class="iconOnly"><i class="fa-solid fa-eye-slash text-sm" title='Hide this check'></i></button>
+      </div>
+    </td>
+  </tr>
+[% END %]
+
+
+<div class="flexrow 2xl:justify-between h-full w-[800px]">
+  <div class="card w-full flexcol gap-0 flex-nowrap h-full min-h-[500px]">
+    <div class="head justify-between" style="flex: 0 0 40px;">
+      <div class="w-[100px]">
+        <a href="agents.cgi" class="button header-button rounded w-[70px]" title="Go back to agent list"><i class="uil uil-angle-double-left"></i>Back</a>
+      </div>
+      <h3>[% IF agent.hostname != "new" %]Edit[% ELSE%]Add[% END %] Agent</h3>
+      <div class="w-[120px]">
+        [% PROCESS _button btn = {
+          form   => { action => 'conf.cgi', },
+          data   => { sub => 'objects', 'apply' => 'yes', 'reload' => 'yes', CSRFtoken => get_user_token(c), },
+          button => { class => 'w-full', title => "Apply all changes and reload core", onclick => "return send_form_in_background(this);", html => '<i class="uil uil-sync"></i>Reload Core' },
+        }%]
+      </div>
+    </div>
+    <form action="agents.cgi" method="POST" class="flexcol w-full h-[calc(100%-45px)]" onsubmit="setFormBtnSpinner(this)">
+      <input type="hidden" name="CSRFtoken" value="[% get_user_token(c) %]">
+      <input type="hidden" name="action" value="save">
+      <input type="hidden" name="old_hostname" value="[% agent.hostname | html %]">
+      <input type="hidden" name="old_backend" value="[% agent.peer_key | html %]">
+      [% IF ! has_multiple_backends %]
+      <input type="hidden" name="backend" value="[% (agent.peer_key || config_backends.keys.0) | html %]">
+      [% END %]
+      <div class="" style="flex: 0 0 140px;">
+        <table class="body cellspacing striped">
+          <tbody>
+            <tr>
+              <th>Hostname</th>
+              <td>
+                <div class="flexrow flex-nowrap gap-x-1">
+                  <input type="text" name="hostname" value="[% IF agent.hostname != 'new' %][% agent.hostname | html %][% END %]" class="flex-grow" required>
+                  <span class="ml-2 text-right w-14 textTH font-semibold self-center">Section:</span>
+                  <input type="text" name="section" value="[% agent.section | html %]" class="w-36" onfocus="this.click()" onclick="ajax_search.init(this, 'section', { url: 'agents.cgi?action=json&amp;type=section', emptymsg:'create new section', autosubmit:false })">
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <th>IP Address</th>
+              <td>
+                <div class="flexrow flex-nowrap gap-x-1">
+                  <input type="text" name="ip" value="[% agent.ip | html %]" placeholder="automatic" class="flex-grow">
+                  <span class="ml-2 text-right w-14 textTH font-semibold self-center">Port:</span>
+                  <input type="text" name="port" value="[% agent.port | html %]" class="w-36" placeholder="8443">
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <th>Password</th>
+              <td>
+                <div class="flexrow flex-nowrap gap-x-1">
+                  <div class="togglePassword relative flex-grow">
+                    <input type="password" name="password" value="" class="w-full" placeholder="[% IF agent.password != '' %]change password[% ELSE %]enter agent password or macro, ex.: $USER9$[% END %]" autocomplete="new-password" [% IF agent.password == '' %]required[% END %]>
+                    <i class="uil uil-eye-slash absolute z-10 right-0 top-0 mr-2 opacity-50 text-lg togglePassword"></i>
+                  </div>
+                  [% IF has_multiple_backends %]
+                  <span class="ml-2 text-right w-14 textTH font-semibold self-center">Site:</span>
+                  <input type="text" name="backend" value="[% peer_name(agent) | html %]" class="w-36" onfocus="this.click()" onclick="ajax_search.init(this, 'site', { url: 'agents.cgi?action=json&amp;type=site', emptymsg:'select an existing site', autosubmit:false })" required>
+                  [% END %]
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td colspan="2" align="center">
+                <div class="flexrow flex-nowrap justify-evenly">
+                  <button class="submit w-44" onclick="return send_form_in_background_with_callback(this, {action: 'scan'}, scan_callback );"><i class="uil uil-search"></i> rescan</button>
+                  <button class="submit w-44 green"><i class="uil uil-save"></i> Save Changes</button>
+                </div>
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="h-full overflow-auto" id="checksTable">
+        <table class="body cellspacing striped rowhover">
+          <tbody>
+            <tr>
+              <th colspan="3" align="center">New Checks ([% checks.new.size %])</th>
+            </tr>
+            [% FOREACH check = checks.new %]
+              [% PROCESS _check_row check=check %]
+            [% END %]
+            <tr>
+              <th colspan="3" align="center">Obsolete Checks ([% checks.obsolete.size %])</th>
+            </tr>
+            [% FOREACH check = checks.obsolete %]
+              [% PROCESS _check_row check=check %]
+            [% END %]
+            <tr>
+              <th colspan="3" align="center">Active Checks ([% checks.exists.size %])</th>
+            </tr>
+            [% FOREACH check = checks.exists %]
+              [% PROCESS _check_row check=check %]
+            [% END %]
+            <tr>
+              <th colspan="3" align="center">Disabled Checks ([% checks.disabled.size %])</th>
+            </tr>
+            [% FOREACH check = checks.disabled %]
+              [% PROCESS _check_row check=check %]
+            [% END %]
+          </tbody>
+        </table>
+      </div>
+      <div class="footer justify-end" style="flex: 0 0 40px;">
+        [% IF agent.hostname != "new" %]<button name="action" value="remove" class="hover-red w-32" onclick="return(confirm('really remove agent: [% agent.hostname | html %]?'))"><i class="uil uil-trash-alt"></i> Delete</button>[% END %]
+      </div>
+    </form>
+  </div>
+
+  <div class="w-[350px] hidden xl:block"></div>
+</div>
+
+<script>
+<!--
+function scan_callback(form, success, data, textStatus, jqXHR) {
+  btn = jQuery(form).find("DIV.spinner").parents("BUTTON");
+  if(!success || (data && data.ok && data.ok == 0)) {
+    if(!showMessageFromCookie()) {
+      if(data && data.message) {
+        thruk_message(data.ok, data.message);
+      }
+    }
+    if(btn) {
+      setBtnError(btn[0], "scan failed: "+(data ? data.message : 'unknown error'));
+    }
+    return;
+  }
+
+  btn = jQuery(form).find("DIV.spinner").parents("BUTTON");
+  if(btn) {
+    setBtnNoSpinner(btn[0]);
+  }
+  updateChecksTable(form);
+}
+
+function updateChecksTable(form) {
+    var host    = jQuery(form).find("INPUT[name=hostname]").val();
+    var backend = jQuery(form).find("INPUT[name=backend]").val();
+    jQuery('#checksTable').html("<div class='spinner'><\/div>");
+    var url = "agents.cgi #checksTable";
+    var data = {
+      action:   'edit',
+      hostname: host,
+      backend:  backend,
+    };
+    jQuery('#checksTable').load(url, data, function(text, status, req) {
+        if(status == "error") {
+          thruk_message(1, "updating checks failed");
+          jQuery('#checksTable').html("");
+        }
+    });
+}
+-->
+</script>
+
+
+[% PROCESS _footer.tt %]

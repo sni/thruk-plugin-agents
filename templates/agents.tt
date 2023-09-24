@@ -1,0 +1,47 @@
+﻿[% PROCESS _header.tt %]
+[% PROCESS _message.tt %]
+
+<div class="card w-full mt-5" style="min-width: 800px;">
+  <div class="head p-0 justify-between border-0">
+    <div class="mx-2">
+      [% PROCESS _table_search_field.tt ids=["agentTable"] %]
+    </div>
+    <div class="grow"></div>
+    <span class="tabs active">Agents</span>
+    <div class="grow"></div>
+    <div class="w-48">
+      <a href="agents.cgi?action=new" class="button green w-40 mx-2"><i class="fa-solid fa-plus"></i> add new host</a>
+    </div>
+  </div>
+  <div class="mainTable [% IF main_table_full %]fullsize[% END %]">
+    <table class="mainTable js-striped" id="agentTable">
+      <thead>
+        <tr>
+          <th class="w-32">Section</th>
+          <th class="">Hostname</th>
+          <th class="w-32">Site</th>
+          <th class="w-32"></th>
+        </tr>
+      </thead>
+      <tbody class="rowhover">
+        [% FOREACH h = data %]
+          <tr>
+            <td></td>
+            <td>[% h.name | html %]</td>
+            <td>[% peer_name(h) | html %]</td>
+            <td>
+              <a href="agents.cgi?action=edit&amp;hostname=[% h.name | uri %]&backend=[% h.peer_key | html %]"><i class="fa-solid fa-pencil text-sm" title='Edit this host'></i></a>
+            </td>
+          </tr>
+        [% END %]
+      </tbody>
+    </table>
+  </div>
+  <div class="mainTableFooter">
+    <div class="flex-1 self-center">
+      [% PROCESS _pager_total_items.tt pager = { total_items => data.size } %]
+    </div>
+  </div>
+</div>
+
+[% PROCESS _footer.tt %]
