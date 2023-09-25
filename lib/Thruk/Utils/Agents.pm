@@ -17,9 +17,17 @@ Thruk::Utils::Agents - Utils for agents
 =cut
 
 ##########################################################
-sub get_checks_checks_for_host {
+
+=head2 get_agent_checks_for_host
+
+    get_agent_checks_for_host($c, $hostname, $hostobj)
+
+returns list of checks for this host grouped by type (new, exists, obsolete, disabled).
+
+=cut
+sub get_agent_checks_for_host {
     my($c, $hostname, $hostobj) = @_;
-    # extract checks
+    # extract checks and group by type
     my $checks = Thruk::Base::array_group_by(get_services_checks($c, $hostname, $hostobj), "exists");
     for my $key (qw/new exists obsolete disabled/) {
         $checks->{$key} = [] unless defined $checks->{$key};
@@ -29,6 +37,14 @@ sub get_checks_checks_for_host {
 }
 
 ##########################################################
+
+=head2 get_services_checks
+
+    get_services_checks($c, $hostname, $hostobj)
+
+returns list of checks as flat list.
+
+=cut
 sub get_services_checks {
     my($c, $hostname, $hostobj) = @_;
     my $checks   = [];
@@ -38,7 +54,7 @@ sub get_services_checks {
         my $data = Thruk::Utils::IO::json_lock_retrieve($datafile);
         $checks = _extract_checks($data->{'inventory'}) if $data->{'inventory'};
     }
-    _set_checks_category($c, $hostobj, $checks) if $hostobj;
+    _set_checks_category($c, $hostobj, $checks);
 
     return($checks);
 }
@@ -52,25 +68,37 @@ sub get_services_checks {
 sub _set_checks_category {
     my($c, $host, $checks) = @_;
 
-    my $services = _host_services($c, $host);
+    my $services = $host ? get_host_agent_services($c, $host) : {};
 
+    my $existing = {};
     for my $chk (@{$checks}) {
         my $name = $chk->{'name'};
-        # TODO: only use agents generated checks
-        if($services->{$name}) {
+        $existing->{$chk->{'id'}} = 1;
+        my $svc = $services->{$name};
+        if($svc && $svc->{'conf'}->{'_AGENT_AUTO_CHECK'}) {
             $chk->{'exists'} = 'exists';
-            $chk->{'_svc'}   = $services->{$name};
+            $chk->{'_svc'}   = $svc;
         } else {
             $chk->{'exists'} = 'new';
         }
     }
-    # TODO: set obsolete and disabled
+
+    for my $name (sort keys %{$services}) {
+        my $svc = $services->{$name};
+        my $id  = $svc->{'conf'}->{'_AGENT_AUTO_CHECK'};
+        next unless $id;
+        next if $existing->{$id};
+
+        push @{$checks}, { 'id' => $id, 'name' => $name, exists => 'obsolete'};
+    }
+
+    # TODO: set disabled
 
     return
 }
 
 ##########################################################
-sub _host_services {
+sub get_host_agent_services {
     my($c, $hostobj) = @_;
     my $objects = $c->{'obj_db'}->get_services_for_host($hostobj);
     return({}) unless $objects && $objects->{'host'};
@@ -90,8 +118,8 @@ sub _extract_checks {
     my $checks = [];
 
     # agent check itself
-    push @{$checks}, { 'id' => 'version', 'name' => 'agent version', check => 'check_snclient_version'};
     push @{$checks}, { 'id' => 'inventory', 'name' => 'agent inventory', check => 'inventory', parent => 'agent version'};
+    push @{$checks}, { 'id' => 'version', 'name' => 'agent version', check => 'check_snclient_version'};
 
     if($inventory->{'cpu'}) {
         push @{$checks}, { 'id' => 'cpu', 'name' => 'cpu', check => 'check_cpu', parent => 'agent version' };

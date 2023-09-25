@@ -2,19 +2,27 @@
 [% PROCESS _message.tt %]
 [% PROCESS _blocks.tt %]
 
-[% BLOCK _check_row %]
-  <tr>
-    <th>
-      [% check.name %]
-      <input type="hidden" name="check.[% check.id %]" value="[% check.exists %]">
-    </th>
-    <td></td>
-    <td>
-      <div class="flexrow flex-nowrap gap-x-1">
-        <button class="iconOnly"><i class="fa-solid fa-eye-slash text-sm" title='Hide this check'></i></button>
-      </div>
-    </td>
-  </tr>
+[% BLOCK _check_type %]
+  <table class="h-full cellspacing striped rowhover [% sub %]">
+    <tbody>
+    [% FOREACH check = checks.$type %]
+      <tr>
+        <th>[% check.name %]</th>
+        <td></td>
+        <td>
+          <div class="flexrow flex-nowrap gap-x-2">
+            [% IF type == "new" %]
+              <div class="radiogroup" style="width: 135px; height: 20px;">
+                <input type="radio" class="radio_on" value="on" id="[% check.id %]_on" name="check.[% check.id %]" checked="checked"><label for="[% check.id %]_on">On</label>
+                <input type="radio" class="radio_off" value="new" id="[% check.id %]_off" name="check.[% check.id %]"><label for="[% check.id %]_off">Off</label>
+              </div>
+            [% END %]
+          </div>
+        </td>
+      </tr>
+    [% END %]
+    </tbody>
+  </table>
 [% END %]
 
 
@@ -33,15 +41,14 @@
         }%]
       </div>
     </div>
-    <form action="agents.cgi" method="POST" class="flexcol w-full h-[calc(100%-45px)]" onsubmit="setFormBtnSpinner(this)">
+    <form action="agents.cgi" method="POST" class="flexcol gap-y-0 w-full h-[calc(100%-45px)]" onsubmit="setFormBtnSpinner(this)">
       <input type="hidden" name="CSRFtoken" value="[% get_user_token(c) %]">
-      <input type="hidden" name="action" value="save">
       <input type="hidden" name="old_hostname" value="[% agent.hostname | html %]">
       <input type="hidden" name="old_backend" value="[% agent.peer_key | html %]">
       [% IF ! has_multiple_backends %]
       <input type="hidden" name="backend" value="[% (agent.peer_key || config_backends.keys.0) | html %]">
       [% END %]
-      <div class="" style="flex: 0 0 140px;">
+      <div style="flex: 0 0 140px;">
         <table class="body cellspacing striped">
           <tbody>
             <tr>
@@ -83,45 +90,31 @@
               <td colspan="2" align="center">
                 <div class="flexrow flex-nowrap justify-evenly">
                   <button class="submit w-44" onclick="return send_form_in_background_with_callback(this, {action: 'scan'}, scan_callback );"><i class="uil uil-search"></i> rescan</button>
-                  <button class="submit w-44 green"><i class="uil uil-save"></i> Save Changes</button>
+                  <button class="submit w-44 green" name="action" value="save"><i class="uil uil-save"></i> Save Changes</button>
                 </div>
               </th>
             </tr>
           </tbody>
         </table>
       </div>
-      <div class="h-full overflow-auto" id="checksTable">
-        <table class="body cellspacing striped rowhover">
-          <tbody>
-            <tr>
-              <th colspan="3" align="center">New Checks ([% checks.new.size %])</th>
-            </tr>
-            [% FOREACH check = checks.new %]
-              [% PROCESS _check_row check=check %]
-            [% END %]
-            <tr>
-              <th colspan="3" align="center">Obsolete Checks ([% checks.obsolete.size %])</th>
-            </tr>
-            [% FOREACH check = checks.obsolete %]
-              [% PROCESS _check_row check=check %]
-            [% END %]
-            <tr>
-              <th colspan="3" align="center">Active Checks ([% checks.exists.size %])</th>
-            </tr>
-            [% FOREACH check = checks.exists %]
-              [% PROCESS _check_row check=check %]
-            [% END %]
-            <tr>
-              <th colspan="3" align="center">Disabled Checks ([% checks.disabled.size %])</th>
-            </tr>
-            [% FOREACH check = checks.disabled %]
-              [% PROCESS _check_row check=check %]
-            [% END %]
-          </tbody>
-        </table>
+      <div class="head justify-between" style="flex: 0 0 40px;">
+        <div class="grow"></div>
+        <span class="tabs clickable text-center text-sm w-40 active" id="sub_2" onclick="set_sub(2)">Add New (<span class="js-type-new-size">[% checks.new.size %]</span>)</span>
+        <span class="tabs clickable text-center text-sm w-40" id="sub_1" onclick="set_sub(1)">Active Checks (<span class="js-type-new-size">[% checks.exists.size %]</span>)</span>
+        <span class="tabs clickable text-center text-sm w-40" id="sub_3" onclick="set_sub(3)">Obsolete Checks (<span class="js-type-new-size">[% checks.obsolete.size %]</span>)</span>
+        <span class="tabs clickable text-center text-sm w-40" id="sub_4" onclick="set_sub(4)">Disabled Checks (<span class="js-type-new-size">[% checks.disabled.size %]</span>)</span>
+        <div class="grow"></div>
+      </div>
+      <div id="checksTable" class="h-full overflow-auto">
+        <div id="checksTableContent">
+          [% PROCESS _check_type type="new" sub="sub_2" %]
+          [% PROCESS _check_type type="exists" sub="sub_1" %]
+          [% PROCESS _check_type type="obsolete" sub="sub_3" %]
+          [% PROCESS _check_type type="disabled" sub="sub_4" %]
+        </div>
       </div>
       <div class="footer justify-end" style="flex: 0 0 40px;">
-        [% IF agent.hostname != "new" %]<button name="action" value="remove" class="hover-red w-32" onclick="return(confirm('really remove agent: [% agent.hostname | html %]?'))"><i class="uil uil-trash-alt"></i> Delete</button>[% END %]
+        [% IF agent.hostname != "new" %]<button name="action" value="remove" class="hover-red w-32" onclick="return(confirm('really remove host: [% agent.hostname | html %]?'))"><i class="uil uil-trash-alt"></i> Delete</button>[% END %]
       </div>
     </form>
   </div>
@@ -156,7 +149,7 @@ function updateChecksTable(form) {
     var host    = jQuery(form).find("INPUT[name=hostname]").val();
     var backend = jQuery(form).find("INPUT[name=backend]").val();
     jQuery('#checksTable').html("<div class='spinner'><\/div>");
-    var url = "agents.cgi #checksTable";
+    var url = "agents.cgi #checksTableContent";
     var data = {
       action:   'edit',
       hostname: host,
@@ -169,6 +162,7 @@ function updateChecksTable(form) {
         }
     });
 }
+
 -->
 </script>
 

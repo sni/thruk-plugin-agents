@@ -65,12 +65,13 @@ sub index {
 
     Thruk::Utils::ssi_include($c);
 
-       if($action eq 'show')  { return _process_show($c); }
-    elsif($action eq 'new')   { return _process_new($c); }
-    elsif($action eq 'edit')  { return _process_edit($c); }
-    elsif($action eq 'scan')  { return _process_scan($c); }
-    elsif($action eq 'save')  { return _process_save($c); }
-    elsif($action eq 'json')  { return _process_json($c); }
+       if($action eq 'show')   { return _process_show($c); }
+    elsif($action eq 'new')    { return _process_new($c); }
+    elsif($action eq 'edit')   { return _process_edit($c); }
+    elsif($action eq 'scan')   { return _process_scan($c); }
+    elsif($action eq 'save')   { return _process_save($c); }
+    elsif($action eq 'remove') { return _process_remove($c); }
+    elsif($action eq 'json')   { return _process_json($c); }
 
     return $c->detach_error({ msg  => 'no such action', code => 400 });
 }
@@ -112,7 +113,7 @@ sub _process_edit {
         return unless _set_object_model($c, $backend);
         my $objects = $c->{'obj_db'}->get_objects_by_name('host', $hostname);
         if(!$objects || scalar @{$objects} == 0) {
-            die("cannot find host");
+            return _process_new($c);
         }
         $hostobj = $objects->[0];
         my $obj = $hostobj->{'conf'};
@@ -127,7 +128,7 @@ sub _process_edit {
     }
 
     # extract checks
-    my $checks = Thruk::Utils::Agents::get_checks_checks_for_host($c, $hostname, $hostobj);
+    my $checks = Thruk::Utils::Agents::get_agent_checks_for_host($c, $hostname, $hostobj);
 
     $c->stash->{checks}           = $checks;
     $c->stash->{'no_auto_reload'} = 1;
@@ -150,22 +151,22 @@ sub _process_save {
 
     if(!$hostname) {
         Thruk::Utils::set_message( $c, 'fail_message', "hostname is required");
-        return _process_new();
+        return _process_new($c);
     }
 
     if(!$backend) {
         Thruk::Utils::set_message( $c, 'fail_message', "backend is required");
-        return _process_new();
+        return _process_new($c);
     }
 
     if(Thruk::Base::check_for_nasty_filename($hostname)) {
         Thruk::Utils::set_message( $c, 'fail_message', "this hostname is not allowed");
-        return _process_new();
+        return _process_new($c);
     }
 
     if(Thruk::Base::check_for_nasty_filename($section)) {
         Thruk::Utils::set_message( $c, 'fail_message', "this section is not allowed");
-        return _process_new();
+        return _process_new($c);
     }
 
     # TODO: add extra logic if old_backend or old_hostname is set and different
@@ -176,7 +177,7 @@ sub _process_save {
     my $obj;
     if(!$objects || scalar @{$objects} == 0) {
         # create new one
-        my $obj = Monitoring::Config::Object->new( type     => 'host',
+        $obj = Monitoring::Config::Object->new( type     => 'host',
                                                    coretype => $c->{'obj_db'}->{'coretype'},
                                                 );
         my $filename = $section ? sprintf('agents/%s/%s.cfg', $section, $hostname) : sprintf('agents/%s.cfg', $hostname);
@@ -184,8 +185,10 @@ sub _process_save {
         die("creating file failed") unless $file;
         $obj->set_file($file);
         $obj->set_uniq_id($c->{'obj_db'});
-        $obj->{'conf'}->{'name'}    = $hostname;
-        $obj->{'conf'}->{'address'} = $ip || $hostname;
+        $obj->{'conf'}->{'host_name'} = $hostname;
+        $obj->{'conf'}->{'alias'}     = $hostname;
+        $obj->{'conf'}->{'use'}       = "generic-host";
+        $obj->{'conf'}->{'address'}   = $ip || $hostname;
     } else {
         $obj = $objects->[0];
     }
@@ -203,15 +206,13 @@ sub _process_save {
         return $c->redirect_to($c->stash->{'url_prefix'}."cgi-bin/agents.cgi?action=edit&hostname=".$hostname."&backend=".$backend);
     }
 
-    # TODO: add agent check and service parent
-
     # save services
     my $checks = Thruk::Utils::Agents::get_services_checks($c, $hostname, $obj);
     my $checks_hash = Thruk::Base::array2hash($checks, "id");
     for my $id (sort keys %{$checks_hash}) {
         my $type = $c->req->parameters->{'check.'.$id};
         my $chk  = $checks_hash->{$id};
-        next unless $type;
+        next unless $type && $type eq 'on';
         my $svc = $chk->{'_svc'};
         if(!$svc) {
             # create new one
@@ -251,7 +252,7 @@ sub _process_save {
             'use'                 => 'generic-service',
             'check_interval'      => $interval,
             'check_command'       => $command,
-            '_AGENT_AUTO_CHECK'   => 1,
+            '_AGENT_AUTO_CHECK'   => $chk->{'id'},
         };
         $svc->{'conf'}->{'parents'} = $chk->{'parent'} if $chk->{'parent'};
 
@@ -265,6 +266,58 @@ sub _process_save {
 
     Thruk::Utils::set_message( $c, 'success_message', "changes saved successfully");
     return $c->redirect_to($c->stash->{'url_prefix'}."cgi-bin/agents.cgi?action=edit&hostname=".$hostname."&backend=".$backend);
+}
+
+##########################################################
+sub _process_remove {
+    my($c) = @_;
+
+    my $hostname  = $c->req->parameters->{'hostname'};
+    my $backend   = $c->req->parameters->{'backend'};
+
+    if(!$hostname) {
+        Thruk::Utils::set_message( $c, 'fail_message', "hostname is required");
+        return $c->redirect_to($c->stash->{'url_prefix'}."cgi-bin/agents.cgi");
+    }
+
+    if(!$backend) {
+        Thruk::Utils::set_message( $c, 'fail_message', "backend is required");
+        return $c->redirect_to($c->stash->{'url_prefix'}."cgi-bin/agents.cgi");
+    }
+
+    return unless _set_object_model($c, $backend);
+
+    my $objects = $c->{'obj_db'}->get_objects_by_name('host', $hostname);
+    for my $obj (@{$objects}) {
+        my $services = $c->{'obj_db'}->get_services_for_host($obj);
+        if($services && $services->{'host'}) {
+            my $removed = 0;
+            for my $name (sort keys %{$services->{'host'}}) {
+                my $svc = $services->{$name};
+                next unless $svc->{'conf'}->{'_AGENT_AUTO_CHECK'};
+                $c->{'obj_db'}->delete_object($svc);
+                $removed++;
+            }
+            # TODO: does not work?
+            if($removed < scalar keys %{$services->{'host'}}) {
+                Thruk::Utils::set_message( $c, 'fail_message', "cannot remove host $hostname, there are still services connected to this host.");
+                return $c->redirect_to($c->stash->{'url_prefix'}."cgi-bin/agents.cgi");
+            }
+        }
+
+        # only remove host if it has been created here
+        if($obj->{'conf'}->{'_AGENT'}) {
+            $c->{'obj_db'}->delete_object($obj);
+        }
+    }
+
+    if($c->{'obj_db'}->commit($c)) {
+        $c->stash->{'obj_model_changed'} = 1;
+    }
+    Thruk::Utils::Conf::store_model_retention($c, $c->stash->{'param_backend'});
+
+    Thruk::Utils::set_message( $c, 'success_message', "host $hostname removed successfully");
+    return $c->redirect_to($c->stash->{'url_prefix'}."cgi-bin/agents.cgi");
 }
 
 ##########################################################
