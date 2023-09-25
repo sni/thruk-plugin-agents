@@ -48,7 +48,7 @@ sub index {
 
     my $config_backends = Thruk::Utils::Conf::set_backends_with_obj_config($c);
     $c->stash->{config_backends}       = $config_backends;
-    $c->stash->{has_multiple_backends} = scalar keys %{$config_backends} > 1 ? 0 : 1;
+    $c->stash->{has_multiple_backends} = scalar keys %{$config_backends} > 1 ? 1 : 0;
 
     # always convert backend name to key
     my $backend  = $c->req->parameters->{'backend'};
@@ -415,13 +415,19 @@ sub _ensure_command_exists {
 ##########################################################
 # returns 1 on success, 0 on redirects. Dies otherwise.
 sub _set_object_model {
-    my($c, $peer_key) = @_;
+    my($c, $peer_key, $retries) = @_;
+    $retries = 0 unless defined $retries;
 
     $c->stash->{'param_backend'} = $peer_key;
     delete $c->{'obj_db'};
     my $rc = Thruk::Utils::Conf::set_object_model($c, undef, $peer_key);
     if($rc == 0 && $c->stash->{set_object_model_err}) {
-        return 0 if $c->stash->{'last_redirect_to'};
+        if($retries < 3 && $c->stash->{"model_job"}) {
+            my $is_running = Thruk::Utils::External::wait_for_job($c, $c->stash->{"model_job"}, 30);
+            if(!$is_running) {
+                return(_set_object_model($c, $peer_key, $retries+1));
+            }
+        }
         die(sprintf("backend %s returned error: %s", $peer_key, $c->stash->{set_object_model_err}));
     }
     delete $c->req->parameters->{'refreshdata'};
