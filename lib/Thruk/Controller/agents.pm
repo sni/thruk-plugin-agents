@@ -2,6 +2,7 @@ package Thruk::Controller::agents;
 
 use warnings;
 use strict;
+use Carp;
 use Cpanel::JSON::XS qw/decode_json/;
 
 use Monitoring::Config::Object ();
@@ -11,6 +12,7 @@ use Thruk::Timer qw/timing_breakpoint/;
 use Thruk::Utils::Agents ();
 use Thruk::Utils::Auth ();
 use Thruk::Utils::Conf ();
+use Thruk::Utils::External ();
 use Thruk::Utils::Log qw/:all/;
 
 =head1 NAME

@@ -3,7 +3,7 @@
 [% PROCESS _blocks.tt %]
 
 [% BLOCK _check_type %]
-  <table class="h-full cellspacing striped rowhover [% sub %]">
+  <table class="h-full cellspacing striped rowhover [% sub | html %]">
     <tbody>
     [% FOREACH check = checks.$type %]
       <tr>
@@ -153,7 +153,7 @@ function updateChecksTable(form) {
     var data = {
       action:   'edit',
       hostname: host,
-      backend:  backend,
+      backend:  backend
     };
     jQuery('#checksTable').load(url, data, function(text, status, req) {
         if(status == "error") {
