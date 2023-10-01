@@ -3,7 +3,7 @@
 [% PROCESS _blocks.tt %]
 
 [% BLOCK _check_type %]
-  <table class="h-full cellspacing striped rowhover [% sub | html %]">
+  <table class="h-full cellspacing striped rowhover [% sub | html %] js-checks" style="display: none;">
     <tbody>
     [% FOREACH check = checks.$type %]
       <tr>
@@ -22,6 +22,13 @@
       </tr>
     [% END %]
     </tbody>
+    [% IF checks.$type.size == 0 %]
+    <tfoot>
+      <tr>
+        <td class="text-center textHINT">no [% type %] checks.</td>
+      </tr>
+    </tfoot>
+    [% END %]
   </table>
 [% END %]
 
@@ -99,16 +106,16 @@
       </div>
       <div class="head justify-between" style="flex: 0 0 40px;">
         <div class="grow"></div>
-        <span class="tabs clickable text-center text-sm w-40 active" id="sub_2" onclick="set_sub(2)">Add New (<span class="js-type-new-size">[% checks.new.size %]</span>)</span>
-        <span class="tabs clickable text-center text-sm w-40" id="sub_1" onclick="set_sub(1)">Active Checks (<span class="js-type-new-size">[% checks.exists.size %]</span>)</span>
-        <span class="tabs clickable text-center text-sm w-40" id="sub_3" onclick="set_sub(3)">Obsolete Checks (<span class="js-type-new-size">[% checks.obsolete.size %]</span>)</span>
-        <span class="tabs clickable text-center text-sm w-40" id="sub_4" onclick="set_sub(4)">Disabled Checks (<span class="js-type-new-size">[% checks.disabled.size %]</span>)</span>
+        <span class="tabs clickable text-center text-sm w-40 active" id="sub_1" onclick="set_sub(1)">Add New (<span class="js-type-1-size">[% checks.new.size %]</span>)</span>
+        <span class="tabs clickable text-center text-sm w-40" id="sub_2" onclick="set_sub(2)">Active Checks (<span class="js-type-2-size">[% checks.exists.size %]</span>)</span>
+        <span class="tabs clickable text-center text-sm w-40" id="sub_3" onclick="set_sub(3)">Obsolete Checks (<span class="js-type-3-size">[% checks.obsolete.size %]</span>)</span>
+        <span class="tabs clickable text-center text-sm w-40" id="sub_4" onclick="set_sub(4)">Disabled Checks (<span class="js-type-4-size">[% checks.disabled.size %]</span>)</span>
         <div class="grow"></div>
       </div>
       <div id="checksTable" class="h-full overflow-auto">
         <div id="checksTableContent">
-          [% PROCESS _check_type type="new" sub="sub_2" %]
-          [% PROCESS _check_type type="exists" sub="sub_1" %]
+          [% PROCESS _check_type type="new" sub="sub_1" %]
+          [% PROCESS _check_type type="exists" sub="sub_2" %]
           [% PROCESS _check_type type="obsolete" sub="sub_3" %]
           [% PROCESS _check_type type="disabled" sub="sub_4" %]
         </div>
@@ -156,12 +163,36 @@ function updateChecksTable(form) {
       backend:  backend
     };
     jQuery('#checksTable').load(url, data, function(text, status, req) {
-        if(status == "error") {
-          thruk_message(1, "updating checks failed");
-          jQuery('#checksTable').html("");
-        }
+      if(status == "error") {
+        thruk_message(1, "updating checks failed");
+        jQuery('#checksTable').html("");
+        return;
+      }
+      updateChecksTotals();
+      if(lastActiveSub) {
+        set_sub(lastActiveSub);
+      }
     });
 }
+
+var totals = {};
+function updateChecksTotals() {
+  jQuery("TABLE.js-checks TBODY").each(function(i, tbody) {
+    var num = tbody.rows.length;
+    jQuery("SPAN.js-type-"+(i+1)+"-size").text(num);
+    totals["sub_"+(i+1)] = num;
+  });
+}
+
+jQuery(document).ready(function() {
+  updateChecksTotals();
+  // activate new tab if there are some...
+  if(totals["sub_1"] > 0) {
+    set_sub(1);
+  } else {
+    set_sub(2);
+  }
+});
 
 -->
 </script>

@@ -86,7 +86,7 @@ sub _check_inventory {
     }
     my($output, $rc);
 
-    my $checks = Thruk::Utils::Agents::get_checks_checks_for_host($c, $host);
+    my $checks = Thruk::Utils::Agents::get_agent_checks_for_host($c, $host);
     if(scalar @{$checks->{'new'}} > 0) {
         my @details;
         for my $chk (@{$checks->{'new'}}) {
@@ -95,7 +95,7 @@ sub _check_inventory {
         return(sprintf("WARNING - %s new checks found\n".join("\n", @details), scalar @{$checks->{'new'}}), 2);
     }
 
-    return("OK - inventory check unchanged\n", 0);
+    return("OK - inventory unchanged\n", 0);
 }
 
 ##############################################

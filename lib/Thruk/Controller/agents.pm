@@ -237,7 +237,7 @@ sub _process_save {
         );
         my $interval = 1;
         if($chk->{'check'} eq 'inventory') {
-            $command  = sprintf("check_thruk_agents!-b '%s' agents check inventory '%s'", $backend, $hostname);
+            $command  = sprintf("check_thruk_agents!agents check inventory '%s'", $hostname);
             $interval = 60;
         }
         if($chk->{'args'}) {
