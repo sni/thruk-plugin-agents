@@ -8,6 +8,8 @@ use Thruk::Timer qw/timing_breakpoint/;
 use Thruk::Utils::IO ();
 use Thruk::Utils::Log qw/:all/;
 
+use Cpanel::JSON::XS qw/decode_json/;
+
 =head1 NAME
 
 Thruk::Utils::Agents - Utils for agents
@@ -66,9 +68,11 @@ sub get_services_checks {
 # - obsolete: exists as services but not in inventory anymore
 # - disabled: exists in inventory but is disabled by user config
 sub _set_checks_category {
-    my($c, $host, $checks) = @_;
+    my($c, $hostobj, $checks) = @_;
 
-    my $services = $host ? get_host_agent_services($c, $host) : {};
+    my $services = $hostobj ? get_host_agent_services($c, $hostobj) : {};
+
+    my $settings = $hostobj->{'conf'}->{'_AGENT_CONFIG'} ? decode_json($hostobj->{'conf'}->{'_AGENT_CONFIG'}) : {};
 
     my $existing = {};
     for my $chk (@{$checks}) {
@@ -79,7 +83,11 @@ sub _set_checks_category {
             $chk->{'exists'} = 'exists';
             $chk->{'_svc'}   = $svc;
         } else {
-            $chk->{'exists'} = 'new';
+            if($settings && $settings->{'disabled'} && Thruk::Base::array_contains($chk->{'id'}, $settings->{'disabled'})) {
+                $chk->{'exists'} = 'disabled';
+            } else {
+                $chk->{'exists'} = 'new';
+            }
         }
     }
 
@@ -91,8 +99,6 @@ sub _set_checks_category {
 
         push @{$checks}, { 'id' => $id, 'name' => $name, exists => 'obsolete'};
     }
-
-    # TODO: set disabled
 
     return
 }

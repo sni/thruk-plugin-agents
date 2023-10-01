@@ -132,6 +132,10 @@ sub _process_edit {
     # extract checks
     my $checks = Thruk::Utils::Agents::get_agent_checks_for_host($c, $hostname, $hostobj);
 
+    my $services = $c->db->get_services( filter => [ Thruk::Utils::Auth::get_auth_filter( $c, 'services' ), { host_name => $hostname }], backend => $backend );
+    $services = Thruk::Base::array2hash($services, "description");
+
+    $c->stash->{services}         = $services;
     $c->stash->{checks}           = $checks;
     $c->stash->{'no_auto_reload'} = 1;
     $c->stash->{template}         = 'agents_edit.tt';
@@ -176,47 +180,47 @@ sub _process_save {
     return unless _set_object_model($c, $backend);
 
     my $objects = $c->{'obj_db'}->get_objects_by_name('host', $hostname);
-    my $obj;
+    my $hostobj;
     if(!$objects || scalar @{$objects} == 0) {
         # create new one
-        $obj = Monitoring::Config::Object->new( type     => 'host',
+        $hostobj = Monitoring::Config::Object->new( type     => 'host',
                                                    coretype => $c->{'obj_db'}->{'coretype'},
                                                 );
         my $filename = $section ? sprintf('agents/%s/%s.cfg', $section, $hostname) : sprintf('agents/%s.cfg', $hostname);
-        my $file = Thruk::Controller::conf::get_context_file($c, $obj, $filename);
+        my $file = Thruk::Controller::conf::get_context_file($c, $hostobj, $filename);
         die("creating file failed") unless $file;
-        $obj->set_file($file);
-        $obj->set_uniq_id($c->{'obj_db'});
-        $obj->{'conf'}->{'host_name'} = $hostname;
-        $obj->{'conf'}->{'alias'}     = $hostname;
-        $obj->{'conf'}->{'use'}       = "generic-host";
-        $obj->{'conf'}->{'address'}   = $ip || $hostname;
+        $hostobj->set_file($file);
+        $hostobj->set_uniq_id($c->{'obj_db'});
+        $hostobj->{'conf'}->{'host_name'} = $hostname;
+        $hostobj->{'conf'}->{'alias'}     = $hostname;
+        $hostobj->{'conf'}->{'use'}       = "generic-host";
+        $hostobj->{'conf'}->{'address'}   = $ip || $hostname;
     } else {
-        $obj = $objects->[0];
+        $hostobj = $objects->[0];
     }
 
-    # TODO: set icon image
+    # TODO: set icon image from agent
     # TODO: add action menu
-    my $data = $obj->{'conf'} // {};
-    $data->{'_AGENT'}          = 'snclient';
-    $data->{'_AGENT_PASSWORD'} = $password if($password ne ''); # only if changed
-    $data->{'_AGENT_SECTION'}  = $section;
-    $data->{'_AGENT_PORT'}     = $port;
+    my $hostdata = $hostobj->{'conf'} // {};
+    $hostdata->{'_AGENT'}          = 'snclient';
+    $hostdata->{'_AGENT_PASSWORD'} = $password if($password ne ''); # only if changed
+    $hostdata->{'_AGENT_SECTION'}  = $section;
+    $hostdata->{'_AGENT_PORT'}     = $port;
+    my $settings = $hostdata->{'_AGENT_CONFIG'} ? decode_json($hostdata->{'_AGENT_CONFIG'}) : {};
 
-    if(!$c->{'obj_db'}->update_object($obj, $data, "", 1)) {
+    if(!$c->{'obj_db'}->update_object($hostobj, $hostdata, "", 1)) {
         Thruk::Utils::set_message( $c, 'fail_message', "failed to save changes.");
         return $c->redirect_to($c->stash->{'url_prefix'}."cgi-bin/agents.cgi?action=edit&hostname=".$hostname."&backend=".$backend);
     }
 
     # save services
-    my $checks = Thruk::Utils::Agents::get_services_checks($c, $hostname, $obj);
+    my $checks = Thruk::Utils::Agents::get_services_checks($c, $hostname, $hostobj);
     my $checks_hash = Thruk::Base::array2hash($checks, "id");
     for my $id (sort keys %{$checks_hash}) {
-        my $type = $c->req->parameters->{'check.'.$id};
+        my $type = $c->req->parameters->{'check.'.$id} // 'off';
         my $chk  = $checks_hash->{$id};
-        next unless $type && $type eq 'on';
         my $svc = $chk->{'_svc'};
-        if(!$svc) {
+        if(!$svc && $type eq 'on') {
             # create new one
             $svc = Monitoring::Config::Object->new( type     => 'service',
                                                     coretype => $c->{'obj_db'}->{'coretype'},
@@ -228,6 +232,14 @@ sub _process_save {
             $svc->set_uniq_id($c->{'obj_db'});
         }
 
+        if($type eq 'off') {
+            # remove service
+            $c->{'obj_db'}->delete_object($svc) if $svc;
+            push @{$settings->{'disabled'}}, $id;
+            $settings->{'disabled'} = Thruk::Base::array_uniq($settings->{'disabled'});
+        }
+        next unless $type eq 'on';
+
         # TODO: ARGS should be configurable somehow
         my $command = sprintf("check_snclient!-k -p '%s' -u 'https://%s:%s' %s",
                 '$_HOSTAGENT_PASSWORD$',
@@ -235,7 +247,7 @@ sub _process_save {
                 '$_HOSTAGENT_PORT$',
                 $chk->{'check'},
         );
-        my $interval = 1;
+        my $interval = 1; # TODO: make configurable
         if($chk->{'check'} eq 'inventory') {
             $command  = sprintf("check_thruk_agents!agents check inventory '%s'", $hostname);
             $interval = 60;
@@ -259,6 +271,13 @@ sub _process_save {
         $svc->{'conf'}->{'parents'} = $chk->{'parent'} if $chk->{'parent'};
 
         $c->{'obj_db'}->update_object($svc, $svc->{'conf'}, "", 1);
+    }
+
+    my $json = Cpanel::JSON::XS->new->canonical;
+    $settings = $json->encode($settings);
+    if($settings ne ($hostdata->{'_AGENT_CONFIG'}//"")) {
+        $hostdata->{'_AGENT_CONFIG'} = $settings;
+        $c->{'obj_db'}->update_object($hostobj, $hostdata, "", 1);
     }
 
     if($c->{'obj_db'}->commit($c)) {

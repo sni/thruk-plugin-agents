@@ -5,18 +5,45 @@
 [% BLOCK _check_type %]
   <table class="h-full cellspacing striped rowhover [% sub | html %] js-checks" style="display: none;">
     <tbody>
-    [% FOREACH check = checks.$type %]
+    [% FOREACH check = checks.$type; name = check.name %]
       <tr>
-        <th>[% check.name %]</th>
-        <td></td>
+        <th>
+          <div class="flex items-center min-w-max justify-between">
+            [% check.name %]
+            [% IF services.exists(name) %]
+              [% s = services.$name; comment_count = s.comments.size; has_bp=0; PROCESS _status_service_attributes service=s service_comment_count=comment_count %]
+            [% END %]
+          </div>
+        </th>
+        [% IF type == "exists" || type == "obsolete" %]
+          <td>
+            [% state = 'PENDING' %]
+            [% IF services.exists(name) %]
+              [% IF s.has_been_checked == 0 %]
+                [% state = 'PENDING' %]
+              [% ELSIF s.state == 0 %]
+                [% state = 'OK' %]
+              [% ELSIF s.state == 1 %]
+                [% state = 'WARNING' %]
+              [% ELSIF s.state == 2 %]
+                [% state = 'CRITICAL' %]
+              [% ELSIF s.state == 3 %]
+                [% state = 'UNKNOWN' %]
+              [% END %]
+            [% END %]
+            <div class='status text-center badge [% state %]'>[% state %]</div>
+          </td>
+        [% END %]
+        <td class="w-full"></td>
         <td>
           <div class="flexrow flex-nowrap gap-x-2">
-            [% IF type == "new" %]
-              <div class="radiogroup" style="width: 135px; height: 20px;">
-                <input type="radio" class="radio_on" value="on" id="[% check.id %]_on" name="check.[% check.id %]" checked="checked"><label for="[% check.id %]_on">On</label>
-                <input type="radio" class="radio_off" value="new" id="[% check.id %]_off" name="check.[% check.id %]"><label for="[% check.id %]_off">Off</label>
-              </div>
-            [% END %]
+            <div class="radiogroup" style="width: 135px; height: 20px;">
+              <input type="radio" class="activeENABLED" value="on" id="[% check.id %]_on" name="check.[% check.id %]"[% IF type == "exists" || type == "obsolete" %]checked="checked"[% END %]><label for="[% check.id %]_on">On</label>
+              [% IF type == "new" %]
+              <input type="radio" value="new" id="[% check.id %]_new" name="check.[% check.id %]"[% IF type == "new" %]checked="checked"[% END %]><label for="[% check.id %]_new">New</label>
+              [% END %]
+              <input type="radio" value="off" id="[% check.id %]_off" name="check.[% check.id %]"[% IF type == "disabled" %]checked="checked"[% END %]><label for="[% check.id %]_off">Off</label>
+            </div>
           </div>
         </td>
       </tr>
@@ -120,7 +147,7 @@
           [% PROCESS _check_type type="disabled" sub="sub_4" %]
         </div>
       </div>
-      <div class="footer justify-end" style="flex: 0 0 40px;">
+      <div class="footer" style="flex: 0 0 40px;">
         [% IF agent.hostname != "new" %]<button name="action" value="remove" class="hover-red w-32" onclick="return(confirm('really remove host: [% agent.hostname | html %]?'))"><i class="uil uil-trash-alt"></i> Delete</button>[% END %]
       </div>
     </form>
