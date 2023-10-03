@@ -2,8 +2,8 @@ package Thruk::Utils::Agents;
 
 use warnings;
 use strict;
-use Cpanel::JSON::XS qw/decode_json/;
 use Carp qw/confess/;
+use Cpanel::JSON::XS qw/decode_json/;
 
 use Monitoring::Config::Object ();
 use Thruk::Controller::conf ();
