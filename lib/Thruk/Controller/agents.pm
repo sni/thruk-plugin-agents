@@ -45,6 +45,8 @@ sub index {
     $c->stash->{page}          = 'agents';
     $c->stash->{template}      = 'agents.tt';
 
+    $c->stash->{build_agent}   = \&_build_agent;
+
     $c->stash->{no_tt_trim}    = 1;
     $c->stash->{'plugin_name'} = Thruk::Utils::get_plugin_name(__FILE__, __PACKAGE__);
 
@@ -82,7 +84,10 @@ sub index {
 sub _process_show {
     my($c) = @_;
 
-    my $hosts = $c->db->get_hosts(filter => [ Thruk::Utils::Auth::get_auth_filter( $c, 'hosts' ), 'custom_variables' => 'AGENT snclient']);
+    my $hosts = $c->db->get_hosts(filter => [ Thruk::Utils::Auth::get_auth_filter( $c, 'hosts' ),
+                                              'custom_variables' => { '~' => 'AGENT .+' },
+                                            ],
+                                 );
     $c->stash->{data} = $hosts;
 
     return;
@@ -516,6 +521,52 @@ sub _set_object_model {
         die(sprintf("failed to initialize objects of peer %s", $peer_key));
     }
     return 1;
+}
+
+##########################################################
+sub _find_agent_modules {
+    our $modules;
+    return $modules if defined $modules;
+
+    $modules = Thruk::Utils::find_modules('/Thruk/Agents/*.pm');
+    for my $mod (@{$modules}) {
+        require $mod;
+        $mod =~ s/\//::/gmx;
+        $mod =~ s/\.pm$//gmx;
+        $mod->import;
+    }
+    return $modules;
+}
+
+##########################################################
+sub _build_agent {
+    my($host) = @_;
+    my $c = $Thruk::Globals::c;
+
+    my $vars    = Thruk::Utils::get_custom_vars($c, $host);
+    my $modules = _find_agent_modules();
+
+    my $type = $vars->{'AGENT'};
+    my @provider = grep { $_ =~ m/::$type$/mxi } @{$modules};
+    if(scalar @provider == 0) {
+        my $list = join(', ', @{$modules});
+        $list =~ s/Thruk::Agents:://gmx;
+        die('unknown type in agent configuration, choose from: '.$list);
+    }
+    my $agent = $provider[0]->new($host);
+
+    my $settings = $agent->settings();
+    # merge some attributes to top level
+    for my $key (qw/type section/) {
+        $agent->{$key} = $settings->{$key} // '';
+    }
+
+    if($c->stash->{'theme'} =~ m/dark/mxi) {
+        $agent->{'icon'} = $settings->{'icon_dark'};
+    }
+    $agent->{'icon'} = $agent->{'icon'} // $settings->{'icon'} // '';
+
+    return($agent);
 }
 
 ##########################################################
