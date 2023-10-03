@@ -95,6 +95,7 @@ sub _process_new {
     my($c) = @_;
 
     my $agent = {
+        'type'     => _default_agent_type($c),
         'hostname' => $c->req->parameters->{'hostname'} // 'new',
         'section'  => $c->req->parameters->{'section'}  // '',
         'ip'       => $c->req->parameters->{'ip'}       // '',
@@ -112,8 +113,6 @@ sub _process_edit {
     my $hostname = $c->req->parameters->{'hostname'};
     my $backend  = $c->req->parameters->{'backend'};
 
-    my $types = Thruk::Utils::Agents::find_agent_module_names();
-
     my $hostobj;
     if(!$agent && $hostname) {
         return unless Thruk::Utils::Agents::set_object_model($c, $backend);
@@ -124,7 +123,7 @@ sub _process_edit {
         $hostobj = $objects->[0];
         my $obj = $hostobj->{'conf'};
         $agent = {
-            'type'     => lc($types->[0]),
+            'type'     => _default_agent_type($c),
             'hostname' => $hostname,
             'ip'       => $obj->{'address'}         // '',
             'section'  => $obj->{'_AGENT_SECTION'}  // '',
@@ -135,7 +134,7 @@ sub _process_edit {
     }
 
     # extract checks
-    my $checks = Thruk::Utils::Agents::get_agent_checks_for_host($c, $hostname, $hostobj);
+    my $checks = Thruk::Utils::Agents::get_agent_checks_for_host($c, $hostname, $hostobj, $hostobj ? undef : _default_agent_type($c));
 
     my $services = $c->db->get_services( filter => [ Thruk::Utils::Auth::get_auth_filter( $c, 'services' ), { host_name => $hostname }], backend => $backend );
     $services = Thruk::Base::array2hash($services, "description");
@@ -147,6 +146,13 @@ sub _process_edit {
     $c->stash->{agent}            = $agent;
 
     return;
+}
+
+##########################################################
+sub _default_agent_type {
+    my($c) = @_;
+    my $types = Thruk::Utils::Agents::find_agent_module_names();
+    return(lc($types->[0]));
 }
 
 ##########################################################
@@ -183,7 +189,7 @@ sub _process_save {
 
     # TODO: add extra logic if old_backend or old_hostname is set and different
 
-    return unless _set_object_model($c, $backend);
+    return unless Thruk::Utils::Agents::set_object_model($c, $backend);
 
     my $data = {
         hostname => $hostname,
@@ -194,7 +200,7 @@ sub _process_save {
         ip       => $ip,
     };
 
-    my $class   = _get_agent_class($type);
+    my $class   = Thruk::Utils::Agents::get_agent_class($type);
     my $agent   = $class->new();
     my $objects = $agent->get_config_objects($c, $data);
     for my $obj (@{$objects}) {
@@ -227,7 +233,7 @@ sub _process_remove {
         return $c->redirect_to($c->stash->{'url_prefix'}."cgi-bin/agents.cgi");
     }
 
-    return unless _set_object_model($c, $backend);
+    return unless Thruk::Utils::Agents::set_object_model($c, $backend);
 
     my $objects = $c->{'obj_db'}->get_objects_by_name('host', $hostname);
     for my $obj (@{$objects}) {
@@ -235,12 +241,12 @@ sub _process_remove {
         if($services && $services->{'host'}) {
             my $removed = 0;
             for my $name (sort keys %{$services->{'host'}}) {
-                my $svc = $services->{$name};
+                my $svc = $services->{'host'}->{$name};
                 next unless $svc->{'conf'}->{'_AGENT_AUTO_CHECK'};
                 $c->{'obj_db'}->delete_object($svc);
                 $removed++;
             }
-            # TODO: does not work?
+            # TODO: show "reload" button
             if($removed < scalar keys %{$services->{'host'}}) {
                 Thruk::Utils::set_message( $c, 'fail_message', "cannot remove host $hostname, there are still services connected to this host.");
                 return $c->redirect_to($c->stash->{'url_prefix'}."cgi-bin/agents.cgi");
@@ -268,13 +274,14 @@ sub _process_scan {
 
     return unless Thruk::Utils::check_csrf($c);
 
-    my $hostname = $c->req->parameters->{'hostname'};
-    my $address  = $c->req->parameters->{'ip'};
-    my $password = $c->req->parameters->{'password'};
-    my $backend  = $c->req->parameters->{'backend'};
-    my $port     = $c->req->parameters->{'port'} || '8443';
+    my $agenttype = $c->req->parameters->{'type'};
+    my $hostname  = $c->req->parameters->{'hostname'};
+    my $address   = $c->req->parameters->{'ip'};
+    my $password  = $c->req->parameters->{'password'};
+    my $backend   = $c->req->parameters->{'backend'};
+    my $port      = $c->req->parameters->{'port'} || '8443';
 
-    return unless _set_object_model($c, $backend);
+    return unless Thruk::Utils::Agents::set_object_model($c, $backend);
 
     # use existing password
     if(!$password) {
@@ -286,9 +293,11 @@ sub _process_scan {
         $password = $obj->{'_AGENT_PASSWORD'};
     }
 
+    my $class = Thruk::Utils::Agents::get_agent_class($agenttype);
+    my $agent = $class->new({});
     my $data;
     eval {
-        $data = _get_inventory($c, $address, $hostname, $password, $port);
+        $data = $agent->get_inventory($c, $address, $hostname, $password, $port);
     };
     my $err = $@;
     if($err) {
@@ -300,7 +309,7 @@ sub _process_scan {
         Thruk::Utils::IO::json_lock_store($c->config->{'tmp_path'}.'/agents/hosts/'.$hostname.'.json', $data, { pretty => 1 });
     }
 
-    return $c->redirect_to($c->stash->{'url_prefix'}."cgi-bin/agents.cgi?action=edit&hostname=".$hostname."&backend=".$backend);
+    return $c->render(json => { ok => 1 });
 }
 
 ##########################################################

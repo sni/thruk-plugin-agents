@@ -3,6 +3,7 @@ package Thruk::Utils::Agents;
 use warnings;
 use strict;
 use Cpanel::JSON::XS qw/decode_json/;
+use Carp qw/confess/;
 
 use Monitoring::Config::Object ();
 use Thruk::Controller::conf ();
@@ -24,15 +25,15 @@ Thruk::Utils::Agents - Utils for agents
 
 =head2 get_agent_checks_for_host
 
-    get_agent_checks_for_host($c, $hostname, $hostobj)
+    get_agent_checks_for_host($c, $hostname, $hostobj, [$agenttype])
 
 returns list of checks for this host grouped by type (new, exists, obsolete, disabled).
 
 =cut
 sub get_agent_checks_for_host {
-    my($c, $hostname, $hostobj) = @_;
+    my($c, $hostname, $hostobj, $agenttype) = @_;
     # extract checks and group by type
-    my $checks = Thruk::Base::array_group_by(get_services_checks($c, $hostname, $hostobj), "exists");
+    my $checks = Thruk::Base::array_group_by(get_services_checks($c, $hostname, $hostobj, $agenttype), "exists");
     for my $key (qw/new exists obsolete disabled/) {
         $checks->{$key} = [] unless defined $checks->{$key};
     }
@@ -44,17 +45,17 @@ sub get_agent_checks_for_host {
 
 =head2 get_services_checks
 
-    get_services_checks($c, $hostname, $hostobj)
+    get_services_checks($c, $hostname, $hostobj, $agenttype)
 
 returns list of checks as flat list.
 
 =cut
 sub get_services_checks {
-    my($c, $hostname, $hostobj) = @_;
+    my($c, $hostname, $hostobj, $agenttype) = @_;
     my $checks   = [];
     return($checks) unless $hostname;
 
-    my $agent = build_agent($hostobj);
+    my $agent = build_agent($hostobj // $agenttype);
     $checks = $agent->get_services_checks($c, $hostname, $hostobj);
     set_checks_category($c, $hostobj, $checks);
 
@@ -108,6 +109,7 @@ returns agent class for given type
 =cut
 sub get_agent_class {
     my($type) = @_;
+    confess("no type") unless $type;
     my $modules  = _find_agent_modules();
     my @provider = grep { $_ =~ m/::$type$/mxi } @{$modules};
     if(scalar @provider == 0) {
@@ -130,7 +132,11 @@ sub build_agent {
     my $c = $Thruk::Globals::c;
 
     my($agenttype, $hostdata);
-    if($host->{'conf'}) {
+    if(!ref $host) {
+        $agenttype = $host;
+        $hostdata  = {};
+    }
+    elsif($host->{'conf'}) {
         # host config object
         $agenttype = $host->{'conf'}->{'_AGENT'};
         $hostdata  = $host->{'conf'};
@@ -201,6 +207,8 @@ returns 1 on success, 0 on redirects. Dies otherwise.
 sub set_object_model {
     my($c, $peer_key, $retries) = @_;
     $retries = 0 unless defined $retries;
+
+    confess("no peer key set") unless $peer_key;
 
     $c->stash->{'param_backend'} = $peer_key;
     delete $c->{'obj_db'};

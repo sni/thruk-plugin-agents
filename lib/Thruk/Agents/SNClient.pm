@@ -200,8 +200,16 @@ sub get_services_checks {
 }
 
 ##########################################################
-sub _get_inventory {
-    my($c, $address, $hostname, $password, $port) = @_;
+
+=head2 get_inventory
+
+    get_inventory($c, $c, $address, $hostname, $password, $port)
+
+returns json structure from inventory api call.
+
+=cut
+sub get_inventory {
+    my($self, $c, $address, $hostname, $password, $port) = @_;
 
     my $command  = "check_snclient";
     # TODO: make -k and such an option

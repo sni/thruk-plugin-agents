@@ -127,7 +127,7 @@
                   <button class="submit w-44" onclick="return send_form_in_background_with_callback(this, {action: 'scan'}, scan_callback );"><i class="uil uil-search"></i> rescan</button>
                   <button class="submit w-44 green" name="action" value="save"><i class="uil uil-save"></i> Save Changes</button>
                 </div>
-              </th>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -194,6 +194,7 @@ function updateChecksTable(form) {
       if(status == "error") {
         thruk_message(1, "updating checks failed");
         jQuery('#checksTable').html("");
+        updateChecksTotals();
         return;
       }
       updateChecksTotals();
@@ -214,11 +215,18 @@ function updateChecksTotals() {
 
 jQuery(document).ready(function() {
   updateChecksTotals();
-  // activate new tab if there are some...
-  if(totals["sub_1"] > 0) {
+  // activate first tab with entries
+  var found = false;
+  jQuery(["sub_1", "sub_2", "sub_3", "sub_4"]).each(function(i, name) {
+    if(totals[name] > 0) {
+      set_sub(i+1);
+      found = true;
+      return(false);
+    }
+    return(true);
+  });
+  if(!found) {
     set_sub(1);
-  } else {
-    set_sub(2);
   }
 });
 
