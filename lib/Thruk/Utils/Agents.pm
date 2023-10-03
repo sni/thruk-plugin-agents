@@ -2,13 +2,15 @@ package Thruk::Utils::Agents;
 
 use warnings;
 use strict;
-
-use Thruk::Base ();
-use Thruk::Timer qw/timing_breakpoint/;
-use Thruk::Utils::IO ();
-use Thruk::Utils::Log qw/:all/;
-
 use Cpanel::JSON::XS qw/decode_json/;
+
+use Monitoring::Config::Object ();
+use Thruk::Controller::conf ();
+use Thruk::Timer qw/timing_breakpoint/;
+use Thruk::Utils ();
+use Thruk::Utils::Conf ();
+use Thruk::Utils::External ();
+use Thruk::Utils::Log qw/:all/;
 
 =head1 NAME
 
@@ -51,23 +53,195 @@ sub get_services_checks {
     my($c, $hostname, $hostobj) = @_;
     my $checks   = [];
     return($checks) unless $hostname;
-    my $datafile = $c->config->{'tmp_path'}.'/agents/hosts/'.$hostname.'.json';
-    if(-r $datafile) {
-        my $data = Thruk::Utils::IO::json_lock_retrieve($datafile);
-        $checks = _extract_checks($data->{'inventory'}) if $data->{'inventory'};
-    }
-    _set_checks_category($c, $hostobj, $checks);
+
+    my $agent = build_agent($hostobj);
+    $checks = $agent->get_services_checks($c, $hostname, $hostobj);
+    set_checks_category($c, $hostobj, $checks);
 
     return($checks);
 }
 
 ##########################################################
-# sets exists attribute for checks, can be:
-# - exists: already exists as services
-# - new: does not yet exist as services
-# - obsolete: exists as services but not in inventory anymore
-# - disabled: exists in inventory but is disabled by user config
-sub _set_checks_category {
+
+=head2 get_host_agent_services
+
+    get_host_agent_services($c, $hostobj)
+
+returns list of services for given host object.
+
+=cut
+sub get_host_agent_services {
+    my($c, $hostobj) = @_;
+    my $objects = $c->{'obj_db'}->get_services_for_host($hostobj);
+    return({}) unless $objects && $objects->{'host'};
+    return($objects->{'host'});
+}
+
+##########################################################
+
+=head2 find_agent_module_names
+
+    find_agent_module_names()
+
+returns available agent class names
+
+=cut
+sub find_agent_module_names {
+    my $modules = _find_agent_modules();
+    my $list = [];
+    for my $mod (@{$modules}) {
+        my $name = $mod;
+        $name =~ s/Thruk::Agents:://gmx;
+        push @{$list}, $name;
+    }
+    return($list);
+}
+
+##########################################################
+
+=head2 get_agent_class
+
+    get_agent_class($type)
+
+returns agent class for given type
+
+=cut
+sub get_agent_class {
+    my($type) = @_;
+    my $modules  = _find_agent_modules();
+    my @provider = grep { $_ =~ m/::$type$/mxi } @{$modules};
+    if(scalar @provider == 0) {
+        die('unknown type in agent configuration, choose from: '.join(', ', @{_find_agent_module_names()}));
+    }
+    return($provider[0]);
+}
+
+##########################################################
+
+=head2 build_agent
+
+    build_agent($hostdata | $hostobj)
+
+returns agent based on host (livestatus) data
+
+=cut
+sub build_agent {
+    my($host) = @_;
+    my $c = $Thruk::Globals::c;
+
+    my($agenttype, $hostdata);
+    if($host->{'conf'}) {
+        # host config object
+        $agenttype = $host->{'conf'}->{'_AGENT'};
+        $hostdata  = $host->{'conf'};
+    } else {
+        my $vars  = Thruk::Utils::get_custom_vars($c, $host);
+        $agenttype = $vars->{'AGENT'};
+        $hostdata  = $host;
+    }
+    my $class = get_agent_class($agenttype);
+    my $agent = $class->new($hostdata);
+
+    my $settings = $agent->settings();
+    # merge some attributes to top level
+    for my $key (qw/type section/) {
+        $agent->{$key} = $settings->{$key} // '';
+    }
+
+    if($c->stash->{'theme'} =~ m/dark/mxi) {
+        $agent->{'icon'} = $settings->{'icon_dark'};
+    }
+    $agent->{'icon'} = $agent->{'icon'} // $settings->{'icon'} // '';
+
+    return($agent);
+}
+
+##########################################################
+
+=head2 check_for_check_commands
+
+    check_for_check_commands($c, [$extra_cmd])
+
+create agent check commands if missing
+
+=cut
+sub check_for_check_commands {
+    my($c, $agent_cmds) = @_;
+
+    $agent_cmds = [] unless defined $agent_cmds;
+    push @{$agent_cmds}, {
+        command_name => 'check_thruk_agents',
+        command_line => '$USER4$/bin/thruk $ARG1$',
+    };
+
+    my $changed = 0;
+    for my $cmd (@{$agent_cmds}) {
+        $changed++ unless _ensure_command_exists($c, $cmd->{'command_name'}, $cmd);
+    }
+
+    if($changed) {
+        if($c->{'obj_db'}->commit($c)) {
+            $c->stash->{'obj_model_changed'} = 1;
+        }
+        Thruk::Utils::Conf::store_model_retention($c, $c->stash->{'param_backend'});
+    }
+
+    return;
+}
+
+##########################################################
+
+=head2 set_object_model
+
+    set_object_model($c, $peer_key, [$retries])
+
+returns 1 on success, 0 on redirects. Dies otherwise.
+
+=cut
+sub set_object_model {
+    my($c, $peer_key, $retries) = @_;
+    $retries = 0 unless defined $retries;
+
+    $c->stash->{'param_backend'} = $peer_key;
+    delete $c->{'obj_db'};
+    my $rc = Thruk::Utils::Conf::set_object_model($c, undef, $peer_key);
+    if($rc == 0 && $c->stash->{set_object_model_err}) {
+        if($retries < 3 && $c->stash->{"model_job"}) {
+            my $is_running = Thruk::Utils::External::wait_for_job($c, $c->stash->{"model_job"}, 30);
+            if(!$is_running) {
+                return(set_object_model($c, $peer_key, $retries+1));
+            }
+        }
+        die(sprintf("backend %s returned error: %s", $peer_key, $c->stash->{set_object_model_err}));
+    }
+    delete $c->req->parameters->{'refreshdata'};
+    if(!$c->{'obj_db'}) {
+        die(sprintf("backend %s has no config tool settings", $peer_key));
+    }
+    # make sure we did not fallback on some default backend
+    if($c->stash->{'param_backend'} ne $peer_key) {
+        die(sprintf("backend %s has no config tool settings", $peer_key));
+    }
+    if($c->{'obj_db'}->{'errors'} && scalar @{$c->{'obj_db'}->{'errors'}} > 0) {
+        die(sprintf("failed to initialize objects of peer %s", $peer_key));
+    }
+    return 1;
+}
+
+##########################################################
+
+=head2 set_checks_category
+
+    set_checks_category($c, $hostobj, $checks)
+
+sets exists attribute for checks, can be:
+ - exists: already exists as services
+ - new: does not yet exist as services
+ - obsolete: exists as services but not in inventory anymore
+ - disabled: exists in inventory but is disabled by user config
+
+=cut
+sub set_checks_category {
     my($c, $hostobj, $checks) = @_;
 
     my $services = $hostobj ? get_host_agent_services($c, $hostobj) : {};
@@ -104,53 +278,53 @@ sub _set_checks_category {
 }
 
 ##########################################################
-sub get_host_agent_services {
-    my($c, $hostobj) = @_;
-    my $objects = $c->{'obj_db'}->get_services_for_host($hostobj);
-    return({}) unless $objects && $objects->{'host'};
-    return($objects->{'host'});
-}
 
-##########################################################
-sub _to_id {
+=head2 to_id
+
+    to_id($name)
+
+returns name with special characters replaced
+
+=cut
+sub to_id {
     my($name) = @_;
     $name =~ s/[^a-zA-Z0-9._\-\/]/_/gmx;
     return($name);
 }
 
 ##########################################################
-sub _extract_checks {
-    my($inventory) = @_;
-    my $checks = [];
+sub _ensure_command_exists {
+    my($c, $name, $data) = @_;
 
-    # agent check itself
-    push @{$checks}, { 'id' => 'inventory', 'name' => 'agent inventory', check => 'inventory', parent => 'agent version'};
-    push @{$checks}, { 'id' => 'version', 'name' => 'agent version', check => 'check_snclient_version'};
-
-    if($inventory->{'cpu'}) {
-        push @{$checks}, { 'id' => 'cpu', 'name' => 'cpu', check => 'check_cpu', parent => 'agent version' };
+    my $objects = $c->{'obj_db'}->get_objects_by_name('command', $name);
+    if($objects && scalar @{$objects} > 0) {
+        return 1;
     }
 
-    if($inventory->{'memory'}) {
-        push @{$checks}, { 'id' => 'mem', 'name' => 'memory', check => 'check_memory', parent => 'agent version' };
+    my $obj = Monitoring::Config::Object->new( type     => 'command',
+                                               coretype => $c->{'obj_db'}->{'coretype'},
+                                            );
+    my $file = Thruk::Controller::conf::get_context_file($c, $obj, 'agents/commands.cfg');
+    die("creating file failed") unless $file;
+    $obj->set_file($file);
+    $obj->set_uniq_id($c->{'obj_db'});
+    $c->{'obj_db'}->update_object($obj, $data, "", 1);
+    return;
+}
+
+##########################################################
+sub _find_agent_modules {
+    our $modules;
+    return $modules if defined $modules;
+
+    $modules = Thruk::Utils::find_modules('/Thruk/Agents/*.pm');
+    for my $mod (@{$modules}) {
+        require $mod;
+        $mod =~ s/\//::/gmx;
+        $mod =~ s/\.pm$//gmx;
+        $mod->import;
     }
-
-    if($inventory->{'network'}) {
-        for my $net (@{$inventory->{'network'}}) {
-            push @{$checks}, { 'id' => 'net.'._to_id($net->{'name'}), 'name' => 'net '.$net->{'name'}, check => 'check_network', args => { "name" => $net->{'name'} }, parent => 'agent version' };
-        }
-    }
-
-    if($inventory->{'drivesize'}) {
-        for my $drive (@{$inventory->{'drivesize'}}) {
-            push @{$checks}, { 'id' => 'df.'._to_id($drive->{'drive'}), 'name' => 'disk '.$drive->{'drive'}, check => 'check_drivesize', args => { "drive" => $drive->{'drive'} }, parent => 'agent version' };
-        }
-    }
-
-    # TODO: process, services
-    # TODO: move into modules
-
-    return $checks;
+    return $modules;
 }
 
 ##########################################################

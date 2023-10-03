@@ -79,6 +79,7 @@
       <input type="hidden" name="CSRFtoken" value="[% get_user_token(c) %]">
       <input type="hidden" name="old_hostname" value="[% agent.hostname | html %]">
       <input type="hidden" name="old_backend" value="[% agent.peer_key | html %]">
+      <input type="hidden" name="type" value="[% agent.type | html %]">
       [% IF ! has_multiple_backends %]
       <input type="hidden" name="backend" value="[% (agent.peer_key || config_backends.keys.0) | html %]">
       [% END %]
