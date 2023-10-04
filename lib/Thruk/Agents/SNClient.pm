@@ -22,6 +22,7 @@ my $settings = {
     'type'      => 'snclient',
     'icon'      => 'snclient.png',
     'icon_dark' => 'snclient_dark.png',
+    'check_nsc_web_extra_options' => '-t 35',
 };
 
 =head1 METHODS
@@ -137,17 +138,21 @@ sub get_config_objects {
         }
         next unless $type eq 'on';
 
-        # TODO: ARGS should be configurable somehow
-        my $command = sprintf("check_snclient!-k -p '%s' -u 'https://%s:%s' %s",
-                '$_HOSTAGENT_PASSWORD$',
+        my $svc_password = '$_HOSTAGENT_PASSWORD$';
+        if($password ne '' && $password =~ m/^\$.*\$$/mx) {
+            $svc_password = $password;
+        }
+        my $command = sprintf("check_snclient!%s -p '%s' -u 'https://%s:%s' %s",
+                _check_nsc_web_extra_options($c),
+                $svc_password,
                 '$HOSTADDRESS$',
                 '$_HOSTAGENT_PORT$',
                 $chk->{'check'},
         );
-        my $interval = 1; # TODO: make configurable
+        my $interval = $c->config->{'Thruk::Agents'}->{'snclient'}->{'check_interval'} // 1;
         if($chk->{'check'} eq 'inventory') {
             $command  = sprintf("check_thruk_agents!agents check inventory '%s'", $hostname);
-            $interval = 60;
+            $interval = $c->config->{'Thruk::Agents'}->{'snclient'}->{'inventory_interval'} // 60;
         }
         if($chk->{'args'}) {
             for my $arg (sort keys %{$chk->{'args'}}) {
@@ -213,8 +218,8 @@ sub get_inventory {
     my($self, $c, $address, $hostname, $password, $port) = @_;
 
     my $command  = "check_snclient";
-    # TODO: make -k and such an option
-    my $args     = sprintf("-k -p '%s' -r -u 'https://%s:%d/api/v1/inventory'",
+    my $args     = sprintf("%s -p '%s' -r -u 'https://%s:%d/api/v1/inventory'",
+        _check_nsc_web_extra_options($c),
         $password,
         ($address || $hostname),
         $port,
@@ -279,6 +284,14 @@ sub _extract_checks {
     # TODO: move into modules
 
     return $checks;
+}
+
+##########################################################
+sub _check_nsc_web_extra_options {
+    my($c) = @_;
+    return(    $c->config->{'Thruk::Agents'}->{'snclient'}->{'check_nsc_web_extra_options'}
+            // $settings->{'check_nsc_web_extra_options'}
+    );
 }
 
 ##########################################################

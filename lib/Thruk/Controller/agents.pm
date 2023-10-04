@@ -112,6 +112,7 @@ sub _process_edit {
 
     my $hostname = $c->req->parameters->{'hostname'};
     my $backend  = $c->req->parameters->{'backend'};
+    my $type     = $c->req->parameters->{'type'} // _default_agent_type($c);
 
     my $hostobj;
     if(!$agent && $hostname) {
@@ -123,7 +124,7 @@ sub _process_edit {
         $hostobj = $objects->[0];
         my $obj = $hostobj->{'conf'};
         $agent = {
-            'type'     => _default_agent_type($c),
+            'type'     => $type,
             'hostname' => $hostname,
             'ip'       => $obj->{'address'}         // '',
             'section'  => $obj->{'_AGENT_SECTION'}  // '',
@@ -134,7 +135,7 @@ sub _process_edit {
     }
 
     # extract checks
-    my $checks = Thruk::Utils::Agents::get_agent_checks_for_host($c, $hostname, $hostobj, $hostobj ? undef : _default_agent_type($c));
+    my $checks = Thruk::Utils::Agents::get_agent_checks_for_host($c, $hostname, $hostobj, $type);
 
     my $services = $c->db->get_services( filter => [ Thruk::Utils::Auth::get_auth_filter( $c, 'services' ), { host_name => $hostname }], backend => $backend );
     $services = Thruk::Base::array2hash($services, "description");
@@ -163,7 +164,7 @@ sub _process_save {
     my $hostname  = $c->req->parameters->{'hostname'};
     my $backend   = $c->req->parameters->{'backend'};
     my $section   = $c->req->parameters->{'section'};
-    my $password  = $c->req->parameters->{'password'};
+    my $password  = $c->req->parameters->{'password'} || $c->config->{'Thruk::Agents'}->{lc($type)}->{'default_password'};
     my $port      = $c->req->parameters->{'port'};
     my $ip        = $c->req->parameters->{'ip'};
 
@@ -236,8 +237,9 @@ sub _process_remove {
     return unless Thruk::Utils::Agents::set_object_model($c, $backend);
 
     my $objects = $c->{'obj_db'}->get_objects_by_name('host', $hostname);
-    for my $obj (@{$objects}) {
-        my $services = $c->{'obj_db'}->get_services_for_host($obj);
+    for my $hostobj (@{$objects}) {
+        my $services = $c->{'obj_db'}->get_services_for_host($hostobj);
+        my $remove_host = 1;
         if($services && $services->{'host'}) {
             my $removed = 0;
             for my $name (sort keys %{$services->{'host'}}) {
@@ -248,14 +250,23 @@ sub _process_remove {
             }
             # TODO: show "reload" button
             if($removed < scalar keys %{$services->{'host'}}) {
-                Thruk::Utils::set_message( $c, 'fail_message', "cannot remove host $hostname, there are still services connected to this host.");
-                return $c->redirect_to($c->stash->{'url_prefix'}."cgi-bin/agents.cgi");
+                $remove_host = 0;
             }
         }
 
         # only remove host if it has been created here
-        if($obj->{'conf'}->{'_AGENT'}) {
-            $c->{'obj_db'}->delete_object($obj);
+        if($remove_host) {
+            if($hostobj->{'conf'}->{'_AGENT'}) {
+                $c->{'obj_db'}->delete_object($hostobj);
+            }
+        } else {
+            # remove agent related custom variables but keep host
+            for my $key (sort keys %{$hostobj->{'conf'}}) {
+                if($key =~ m/^_AGENT/mx) {
+                    delete $hostobj->{'conf'}->{$key};
+                }
+            }
+            $c->{'obj_db'}->update_object($hostobj, $hostobj->{'conf'}, "", 1);
         }
     }
 
@@ -286,12 +297,12 @@ sub _process_scan {
     # use existing password
     if(!$password) {
         my $objects = $c->{'obj_db'}->get_objects_by_name('host', $hostname);
-        if(!$objects || scalar @{$objects} == 0) {
-            die("cannot find host");
+        if($objects && scalar @{$objects} > 0) {
+            my $obj = $objects->[0]->{'conf'};
+            $password = $obj->{'_AGENT_PASSWORD'};
         }
-        my $obj = $objects->[0]->{'conf'};
-        $password = $obj->{'_AGENT_PASSWORD'};
     }
+    $password = $password || $c->config->{'Thruk::Agents'}->{lc($agenttype)}->{'default_password'};
 
     my $class = Thruk::Utils::Agents::get_agent_class($agenttype);
     my $agent = $class->new({});
@@ -302,6 +313,9 @@ sub _process_scan {
     my $err = $@;
     if($err) {
         $err = Thruk::Base::trim_whitespace($err);
+        if($err =~ m/\Qflag provided but not defined\E/mx) {
+            $err = "please update check_nsc_web\n".$err;
+        }
         Thruk::Utils::set_message( $c, 'fail_message', "failed to scan agent: ".$err );
     } else {
         # save scan results

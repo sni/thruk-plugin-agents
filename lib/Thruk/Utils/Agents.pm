@@ -55,7 +55,7 @@ sub get_services_checks {
     my $checks   = [];
     return($checks) unless $hostname;
 
-    my $agent = build_agent($hostobj // $agenttype);
+    my $agent = build_agent($agenttype // $hostobj);
     $checks = $agent->get_services_checks($c, $hostname, $hostobj);
     set_checks_category($c, $hostobj, $checks);
 
@@ -231,6 +231,7 @@ sub set_object_model {
         die(sprintf("backend %s has no config tool settings", $peer_key));
     }
     if($c->{'obj_db'}->{'errors'} && scalar @{$c->{'obj_db'}->{'errors'}} > 0) {
+        _error(join("\n", @{$c->{'obj_db'}->{'errors'}}));
         die(sprintf("failed to initialize objects of peer %s", $peer_key));
     }
     return 1;
