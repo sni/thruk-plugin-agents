@@ -2,7 +2,6 @@ package Thruk::Controller::agents;
 
 use warnings;
 use strict;
-use Carp;
 use Cpanel::JSON::XS qw/decode_json/;
 
 use Thruk::Action::AddDefaults ();

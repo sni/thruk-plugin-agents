@@ -2,6 +2,7 @@ package Thruk::Agents::SNClient;
 
 use warnings;
 use strict;
+use Carp qw/confess/;
 use Cpanel::JSON::XS qw/decode_json/;
 
 use Monitoring::Config::Object ();
