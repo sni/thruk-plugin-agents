@@ -93,14 +93,15 @@ sub _process_show {
 sub _process_new {
     my($c) = @_;
 
+    my $type  = _default_agent_type($c);
     my $agent = {
-        'type'     => _default_agent_type($c),
+        'type'     => $type,
         'hostname' => $c->req->parameters->{'hostname'} // 'new',
         'section'  => $c->req->parameters->{'section'}  // '',
         'ip'       => $c->req->parameters->{'ip'}       // '',
         'port'     => $c->req->parameters->{'port'}     // '',
-        'password' => $c->req->parameters->{'password'} // '',
-        'peer_key' => $c->req->parameters->{'backend'}  // '',
+        'password' => $c->req->parameters->{'password'} // $c->config->{'Thruk::Agents'}->{lc($type)}->{'default_password'} // '',
+        'peer_key' => $c->req->parameters->{'backend'}  // $c->stash->{'param_backend'},
     };
     return _process_edit($c, $agent);
 }

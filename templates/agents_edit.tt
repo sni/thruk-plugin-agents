@@ -52,7 +52,7 @@
     [% IF checks.$type.size == 0 %]
     <tfoot>
       <tr>
-        <td class="text-center textHINT">no [% type %] checks.</td>
+        <td class="text-center textHINT">[% IF agent.hostname != "new" %]no [% type %] checks.[% ELSE %]not yet scanned...[% END %]</td>
       </tr>
     </tfoot>
     [% END %]
@@ -170,6 +170,8 @@ function scan_callback(form, success, data, textStatus, jqXHR) {
     if(btn) {
       setBtnError(btn[0], "scan failed: "+(data ? data.message : 'unknown error'));
     }
+    var msg = getXHRerrorMsg("", textStatus, jqXHR);
+    jQuery("#checksTableContent").html("<div class='text-center textHINT mt-5'>"+msg+"</div>");
     return;
   }
 
