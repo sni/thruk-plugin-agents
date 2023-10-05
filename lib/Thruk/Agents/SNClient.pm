@@ -200,7 +200,7 @@ sub get_services_checks {
     my $checks = [];
     if(-r $datafile) {
         my $data = Thruk::Utils::IO::json_lock_retrieve($datafile);
-        $checks = _extract_checks($data->{'inventory'}) if $data->{'inventory'};
+        $checks = _extract_checks($c, $data->{'inventory'}) if $data->{'inventory'};
     }
     return($checks);
 }
@@ -253,7 +253,7 @@ sub get_inventory {
 
 ##########################################################
 sub _extract_checks {
-    my($inventory) = @_;
+    my($c, $inventory) = @_;
     my $checks = [];
 
     # agent check itself
@@ -265,18 +265,37 @@ sub _extract_checks {
     }
 
     if($inventory->{'memory'}) {
-        push @{$checks}, { 'id' => 'mem', 'name' => 'memory', check => 'check_memory', parent => 'agent version' };
+        push @{$checks}, {
+            'id'     => 'mem',
+            'name'   => 'memory',
+            'check'  => 'check_memory',
+            'parent' => 'agent version',
+        };
     }
 
     if($inventory->{'network'}) {
         for my $net (@{$inventory->{'network'}}) {
-            push @{$checks}, { 'id' => 'net.'.Thruk::Utils::Agents::to_id($net->{'name'}), 'name' => 'net '.$net->{'name'}, check => 'check_network', args => { "name" => $net->{'name'} }, parent => 'agent version' };
+            push @{$checks}, {
+                'id'     => 'net.'.Thruk::Utils::Agents::to_id($net->{'name'}),
+                'name'   => 'net '.$net->{'name'},
+                'check'  => 'check_network',
+                'args'   => { "name" => $net->{'name'} },
+                'parent' => 'agent version',
+                'info'   => _make_info($net),
+            };
         }
     }
 
     if($inventory->{'drivesize'}) {
         for my $drive (@{$inventory->{'drivesize'}}) {
-            push @{$checks}, { 'id' => 'df.'.Thruk::Utils::Agents::to_id($drive->{'drive'}), 'name' => 'disk '.$drive->{'drive'}, check => 'check_drivesize', args => { "drive" => $drive->{'drive'} }, parent => 'agent version' };
+            push @{$checks}, {
+                'id'     => 'df.'.Thruk::Utils::Agents::to_id($drive->{'drive'}),
+                'name'   => 'disk '.$drive->{'drive'},
+                'check'  => 'check_drivesize',
+                'args'   => { "drive" => $drive->{'drive'} },
+                'parent' => 'agent version',
+                'info'   => _make_info($drive),
+            };
         }
     }
 
@@ -284,6 +303,12 @@ sub _extract_checks {
     # TODO: move into modules
 
     return $checks;
+}
+
+##########################################################
+sub _make_info {
+    my($data) = @_;
+    return(Thruk::Utils::dump_params($data, 5000, 0))
 }
 
 ##########################################################

@@ -63,17 +63,21 @@ sub index {
     my $action = $c->req->parameters->{'action'} || 'show';
     $c->stash->{action} = $action;
 
+       if($action eq 'show')   { _process_show($c); }
+    elsif($action eq 'new')    { _process_new($c); }
+    elsif($action eq 'edit')   { _process_edit($c); }
+    elsif($action eq 'scan')   { _process_scan($c); }
+    elsif($action eq 'save')   { _process_save($c); }
+    elsif($action eq 'remove') { _process_remove($c); }
+    elsif($action eq 'json')   { _process_json($c); }
+    else {
+        return $c->detach_error({ msg  => 'no such action', code => 400 });
+    }
+
+    Thruk::Utils::Agents::set_object_model($c, $backend || $c->stash->{'param_backend'}) unless $c->{'obj_db'};
+    $c->stash->{'reload_required'} = $c->{'obj_db'} && $c->{'obj_db'}->{'last_changed'} ? 1 : 0;
+
     Thruk::Utils::ssi_include($c);
-
-       if($action eq 'show')   { return _process_show($c); }
-    elsif($action eq 'new')    { return _process_new($c); }
-    elsif($action eq 'edit')   { return _process_edit($c); }
-    elsif($action eq 'scan')   { return _process_scan($c); }
-    elsif($action eq 'save')   { return _process_save($c); }
-    elsif($action eq 'remove') { return _process_remove($c); }
-    elsif($action eq 'json')   { return _process_json($c); }
-
-    return $c->detach_error({ msg  => 'no such action', code => 400 });
 }
 
 ##########################################################
@@ -248,7 +252,6 @@ sub _process_remove {
                 $c->{'obj_db'}->delete_object($svc);
                 $removed++;
             }
-            # TODO: show "reload" button
             if($removed < scalar keys %{$services->{'host'}}) {
                 $remove_host = 0;
             }

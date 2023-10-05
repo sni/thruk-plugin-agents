@@ -3,13 +3,13 @@
 [% PROCESS _blocks.tt %]
 
 [% BLOCK _check_type %]
-  <table class="h-full cellspacing striped rowhover [% sub | html %] js-checks" style="display: none;">
+  <table class="h-full w-full cellspacing striped rowhover [% sub | html %] js-checks" style="display: none;">
     <tbody>
     [% FOREACH check = checks.$type; name = check.name %]
       <tr>
         <th>
           <div class="flex items-center min-w-max justify-between">
-            [% check.name %]
+            <div class="text-ellipsis overflow-hidden max-w-lg">[% check.name %]</div>
             [% IF services.exists(name) %]
               [% s = services.$name; comment_count = s.comments.size; has_bp=0; PROCESS _status_service_attributes service=s service_comment_count=comment_count %]
             [% END %]
@@ -34,7 +34,14 @@
             <div class='status text-center badge [% state %]'>[% state %]</div>
           </td>
         [% END %]
-        <td class="w-full"></td>
+        <td class="w-full">
+          [% IF type == "new" %]
+            [% IF check.exists("info") %]
+              <a href="" class="link" onclick="overcard({'bodyCls': 'p-2', 'bodyEl': 'info_[% check.id %]', 'caption': 'details for [% check.name %]', 'width': 900 }); return false;">(info)</a>
+              <div id="info_[% check.id %]" class="hidden whitespace-pre text-left">[% check.info | nl2br %]</div>
+            [% END %]
+          [% END %]
+        </td>
         <td>
           <div class="flexrow flex-nowrap gap-x-2">
             <div class="radiogroup" style="width: 135px; height: 20px;">
@@ -67,11 +74,12 @@
         <a href="agents.cgi" class="button header-button rounded w-[70px]" title="Go back to agent list"><i class="uil uil-angle-double-left"></i>Back</a>
       </div>
       <h3>[% IF agent.hostname != "new" %]Edit[% ELSE%]Add[% END %] Agent</h3>
-      <div class="w-[120px]">
+      <div class="w-40">
+        [% class = ""; IF reload_required; class=" orange"; END %]
         [% PROCESS _button btn = {
           form   => { action => 'conf.cgi', },
           data   => { sub => 'objects', 'apply' => 'yes', 'reload' => 'yes', CSRFtoken => get_user_token(c), },
-          button => { class => 'w-full', title => "Apply all changes and reload core", onclick => "return send_form_in_background(this);", html => '<i class="uil uil-sync"></i>Reload Core' },
+          button => { class => 'w-full' _ class, title => "Apply all changes and reload core", onclick => "return send_form_in_background(this);", html => '<i class="uil uil-sync"></i>Activate Changes' },
         }%]
       </div>
     </div>
@@ -137,7 +145,7 @@
         <span class="tabs clickable text-center text-sm w-40 active" id="sub_1" onclick="set_sub(1)">Add New (<span class="js-type-1-size">[% checks.new.size %]</span>)</span>
         <span class="tabs clickable text-center text-sm w-40" id="sub_2" onclick="set_sub(2)">Active Checks (<span class="js-type-2-size">[% checks.exists.size %]</span>)</span>
         <span class="tabs clickable text-center text-sm w-40" id="sub_3" onclick="set_sub(3)">Obsolete Checks (<span class="js-type-3-size">[% checks.obsolete.size %]</span>)</span>
-        <span class="tabs clickable text-center text-sm w-40" id="sub_4" onclick="set_sub(4)">Disabled Checks (<span class="js-type-4-size">[% checks.disabled.size %]</span>)</span>
+        <span class="tabs clickable text-center text-sm w-40" id="sub_4" onclick="set_sub(4)">Unwanted Checks (<span class="js-type-4-size">[% checks.disabled.size %]</span>)</span>
         <div class="grow"></div>
       </div>
       <div id="checksTable" class="h-full overflow-auto">

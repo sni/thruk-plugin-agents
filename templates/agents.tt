@@ -10,7 +10,16 @@
     <div class="grow"></div>
     <span class="tabs active">Agents</span>
     <div class="grow"></div>
-    <div class="w-48">
+    <div class="w-72 flexrow flex-nowrap gap-x-1">
+      <div class="w-40">
+        [% IF reload_required %]
+        [% PROCESS _button btn = {
+          form   => { action => 'conf.cgi', },
+          data   => { sub => 'objects', 'apply' => 'yes', 'reload' => 'yes', CSRFtoken => get_user_token(c), },
+          button => { class => 'w-full orange', title => "Apply all changes and reload core", onclick => "return send_form_in_background_and_reload(this);", html => '<i class="uil uil-sync"></i>Activate Changes' },
+        }%]
+        [% END %]
+      </div>
       <a href="agents.cgi?action=new" class="button green w-40 mx-2"><i class="fa-solid fa-plus"></i> add new host</a>
     </div>
   </div>
