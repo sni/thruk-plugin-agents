@@ -276,12 +276,13 @@ sub _extract_checks {
     if($inventory->{'network'}) {
         for my $net (@{$inventory->{'network'}}) {
             push @{$checks}, {
-                'id'     => 'net.'.Thruk::Utils::Agents::to_id($net->{'name'}),
-                'name'   => 'net '.$net->{'name'},
-                'check'  => 'check_network',
-                'args'   => { "name" => $net->{'name'} },
-                'parent' => 'agent version',
-                'info'   => _make_info($net),
+                'id'       => 'net.'.Thruk::Utils::Agents::to_id($net->{'name'}),
+                'name'     => 'net '.$net->{'name'},
+                'check'    => 'check_network',
+                'args'     => { "name" => $net->{'name'} },
+                'parent'   => 'agent version',
+                'info'     => _make_info($net),
+                'disabled' => _check_disable($net, $c->config->{'Thruk::Agents'}->{'snclient'}->{'disable'}->{network}),
             };
         }
     }
@@ -289,12 +290,13 @@ sub _extract_checks {
     if($inventory->{'drivesize'}) {
         for my $drive (@{$inventory->{'drivesize'}}) {
             push @{$checks}, {
-                'id'     => 'df.'.Thruk::Utils::Agents::to_id($drive->{'drive'}),
-                'name'   => 'disk '.$drive->{'drive'},
-                'check'  => 'check_drivesize',
-                'args'   => { "drive" => $drive->{'drive'} },
-                'parent' => 'agent version',
-                'info'   => _make_info($drive),
+                'id'       => 'df.'.Thruk::Utils::Agents::to_id($drive->{'drive'}),
+                'name'     => 'disk '.$drive->{'drive'},
+                'check'    => 'check_drivesize',
+                'args'     => { "drive" => $drive->{'drive'} },
+                'parent'   => 'agent version',
+                'info'     => _make_info($drive),
+                'disabled' => _check_disable($drive, $c->config->{'Thruk::Agents'}->{'snclient'}->{'disable'}->{drivesize}),
             };
         }
     }
@@ -309,6 +311,36 @@ sub _extract_checks {
 sub _make_info {
     my($data) = @_;
     return(Thruk::Utils::dump_params($data, 5000, 0))
+}
+
+##########################################################
+sub _check_disable {
+    my($data, $conf) = @_;
+    for my $attr (sort keys %{$conf}) {
+        my $val = $data->{$attr} // '';
+        for my $f (@{Thruk::Base::list($conf->{$attr})}) {
+            my $op = '=';
+            if($f =~ m/^([\!=~]+)\s+(.*)$/mx) {
+                $op = $1;
+                $f  = $2;
+            }
+            if($op eq '=' || $op eq '==') {
+                return 1 if $val eq $f;
+            }
+            elsif($op eq '!=' || $op eq '!==') {
+                return 1 if $val ne $f;
+            }
+            elsif($op eq '~' || $op eq '~~') {
+                return 1 if $val =~ m/$f/;
+            }
+            elsif($op eq '!~' || $op eq '!~~') {
+                return 1 if $val !~ m/$f/;
+            } else {
+                die("unknown operator: $op");
+            }
+        }
+    }
+    return(0);
 }
 
 ##########################################################

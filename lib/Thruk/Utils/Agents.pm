@@ -269,7 +269,11 @@ sub set_checks_category {
             if($settings && $settings->{'disabled'} && Thruk::Base::array_contains($chk->{'id'}, $settings->{'disabled'})) {
                 $chk->{'exists'} = 'disabled';
             } else {
-                $chk->{'exists'} = 'new';
+                if($chk->{'disabled'}) {
+                    $chk->{'exists'} = 'disabled';
+                } else {
+                    $chk->{'exists'} = 'new';
+                }
             }
         }
     }
