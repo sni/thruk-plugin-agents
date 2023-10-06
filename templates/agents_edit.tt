@@ -12,12 +12,13 @@
   <table class="h-full w-full cellspacing striped rowhover [% sub | html %] js-checks" style="display: none;">
     <tbody>
     [% FOREACH check = checks.$type; name = check.name %]
+      [% IF services.exists(name); s = services.$name; END %]
       <tr>
         <th>
           <div class="flex items-center min-w-max justify-between">
-            <div class="text-ellipsis overflow-hidden max-w-lg">[% check.name %]</div>
+            <div class="text-ellipsis overflow-hidden max-w-lg">[% IF services.exists(name) %]<a href="extinfo.cgi?type=2&host=[% s.host_name | uri %]&service=[% s.description | uri %]&backend=[% s.peer_key %]" class="link">[% END %][% check.name %][% IF services.exists(name) %]</a>[% END %]</div>
             [% IF services.exists(name) %]
-              [% s = services.$name; comment_count = s.comments.size; has_bp=0; PROCESS _status_service_attributes service=s service_comment_count=comment_count %]
+              [% comment_count = s.comments.size; has_bp=0; PROCESS _status_service_attributes service=s service_comment_count=comment_count %]
             [% END %]
           </div>
         </th>
