@@ -303,10 +303,17 @@ sub _extract_checks {
 
     if($inventory->{'service'}) {
         my $wanted = {};
-        if($c->config->{'Thruk::Agents'}->{'snclient'}->{'services'}->{'name'}) {
-            $wanted = Thruk::Base::array2hash($c->config->{'Thruk::Agents'}->{'snclient'}->{'services'}->{'name'});
+        my $configs = Thruk::Base::list($c->config->{'Thruk::Agents'}->{'snclient'}->{'service'});
+        for my $cfg (@{$configs}) {
+            next unless _check_host_match($cfg->{'host'});
+            if($cfg->{'name'}) {
+                for my $n (@{Thruk::Base::list($cfg->{'name'})}) {
+                    $wanted->{$n} = $cfg;
+                }
+            }
         }
-        for my $svc (@{$inventory->{'service'}}) {
+        my $services = Thruk::Base::list($inventory->{'service'});
+        for my $svc (@{$services}) {
             next unless $wanted->{$svc->{'name'}};
             push @{$checks}, {
                 'id'       => 'svc.'.Thruk::Utils::Agents::to_id($svc->{'name'}),
@@ -357,6 +364,23 @@ sub _check_disable {
                 die("unknown operator: $op");
             }
         }
+    }
+    return(0);
+}
+
+##########################################################
+sub _check_host_match {
+    my($hosts) = @_;
+    $hosts = Thruk::Base::list($hosts);
+    return 1 if scalar @{$hosts} == 0;
+    my $hostname = $Thruk::Globals::HOSTNAME;
+    for my $hst (@{$hosts}) {
+        return 1 if $hst eq 'ANY';
+        return 1 if $hst eq '*';
+        return 1 if $hst eq '.*';
+        ## no critic
+        return 1 if $hostname =~ m/$hst/;
+        ## use critic
     }
     return(0);
 }
