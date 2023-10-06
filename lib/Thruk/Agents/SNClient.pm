@@ -279,7 +279,7 @@ sub _extract_checks {
                 'id'       => 'net.'.Thruk::Utils::Agents::to_id($net->{'name'}),
                 'name'     => 'net '.$net->{'name'},
                 'check'    => 'check_network',
-                'args'     => { "name" => $net->{'name'} },
+                'args'     => { "filter" => "name=".$net->{'name'} },
                 'parent'   => 'agent version',
                 'info'     => _make_info($net),
                 'disabled' => _check_disable($net, $c->config->{'Thruk::Agents'}->{'snclient'}->{'disable'}->{network}),
@@ -312,7 +312,7 @@ sub _extract_checks {
                 'id'       => 'svc.'.Thruk::Utils::Agents::to_id($svc->{'name'}),
                 'name'     => 'service '.$svc->{'name'},
                 'check'    => 'check_service',
-                'args'     => { "name" => $svc->{'name'} },
+                'args'     => { "service" => $svc->{'name'} },
                 'parent'   => 'agent version',
                 'info'     => _make_info($svc),
             };
