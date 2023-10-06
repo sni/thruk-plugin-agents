@@ -301,7 +301,25 @@ sub _extract_checks {
         }
     }
 
-    # TODO: process, services
+    if($inventory->{'service'}) {
+        my $wanted = {};
+        if($c->config->{'Thruk::Agents'}->{'snclient'}->{'services'}->{'name'}) {
+            $wanted = Thruk::Base::array2hash($c->config->{'Thruk::Agents'}->{'snclient'}->{'services'}->{'name'});
+        }
+        for my $svc (@{$inventory->{'service'}}) {
+            next unless $wanted->{$svc->{'name'}};
+            push @{$checks}, {
+                'id'       => 'svc.'.Thruk::Utils::Agents::to_id($svc->{'name'}),
+                'name'     => 'service '.$svc->{'name'},
+                'check'    => 'check_service',
+                'args'     => { "name" => $svc->{'name'} },
+                'parent'   => 'agent version',
+                'info'     => _make_info($svc),
+            };
+        }
+    }
+
+    # TODO: process
     # TODO: move into modules
 
     return $checks;

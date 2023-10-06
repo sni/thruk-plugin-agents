@@ -2,6 +2,12 @@
 [% PROCESS _message.tt %]
 [% PROCESS _blocks.tt %]
 
+<script>
+<!--
+  var pageLoaded = false;
+-->
+</script>
+
 [% BLOCK _check_type %]
   <table class="h-full w-full cellspacing striped rowhover [% sub | html %] js-checks" style="display: none;">
     <tbody>
@@ -15,9 +21,9 @@
             [% END %]
           </div>
         </th>
-        [% IF type == "exists" || type == "obsolete" %]
-          <td>
-            [% state = 'PENDING' %]
+        <td>
+          [% state = 'PENDING' %]
+          [% IF type == "exists" || type == "obsolete" %]
             [% IF services.exists(name) %]
               [% IF s.has_been_checked == 0 %]
                 [% state = 'PENDING' %]
@@ -32,19 +38,30 @@
               [% END %]
             [% END %]
             <div class='status text-center badge [% state %]'>[% state %]</div>
-          </td>
+          [% END %]
+          [% IF type == "new" %]
+            <div class='status text-center badge PENDING'>new</div>
+          [% END %]
+          [% IF type == "disabled" %]
+            <div class='status text-center badge PENDING'>disabled</div>
+          [% END %]
+        </td>
+        [% IF type == "exists" || type == "obsolete" %]
+        <td class='truncate w-1/2 max-w-xs'>
+          [% s.plugin_output %]
+        </td>
         [% END %]
         <td class="w-full">
-          [% IF type == "new" %]
-            [% IF check.exists("info") %]
+          [% IF type != "exists" %]
+            [% IF check.defined("info") %]
               <a href="" class="link" onclick="overcard({'bodyCls': 'p-2', 'bodyEl': 'info_[% check.id %]', 'caption': 'details for [% check.name %]', 'width': 900 }); return false;">(info)</a>
               <div id="info_[% check.id %]" class="hidden whitespace-pre text-left">[% check.info | nl2br %]</div>
             [% END %]
           [% END %]
         </td>
-        <td>
+        <td class="pt-px pb-px">
           <div class="flexrow flex-nowrap gap-x-2">
-            <div class="radiogroup" style="width: 135px; height: 20px;">
+            <div class="radiogroup" style="width: 135px; height: 24px;">
               <input type="radio" class="activeENABLED" value="on" id="[% check.id %]_on" name="check.[% check.id %]"[% IF type == "exists" || type == "obsolete" %]checked="checked"[% END %]><label for="[% check.id %]_on">On</label>
               [% IF type == "new" %]
               <input type="radio" value="new" id="[% check.id %]_new" name="check.[% check.id %]"[% IF type == "new" %]checked="checked"[% END %]><label for="[% check.id %]_new">New</label>
@@ -79,7 +96,7 @@
         [% PROCESS _button btn = {
           form   => { action => 'conf.cgi', },
           data   => { sub => 'objects', 'apply' => 'yes', 'reload' => 'yes', CSRFtoken => get_user_token(c), },
-          button => { class => 'w-full' _ class, title => "Apply all changes and reload core", onclick => "return send_form_in_background_and_reload(this);", html => '<i class="uil uil-sync"></i>Activate Changes' },
+          button => { class => 'js-activate-btn w-full' _ class, title => "Apply all changes and reload core", onclick => "return send_form_in_background_and_reload(this);", html => '<i class="uil uil-sync"></i>Activate Changes' },
         }%]
       </div>
     </div>
@@ -108,7 +125,10 @@
               <th>IP Address</th>
               <td>
                 <div class="flexrow flex-nowrap gap-x-1">
-                  <input type="text" name="ip" value="[% agent.ip | html %]" placeholder="automatic" class="flex-grow">
+                  <div class="flexrow flex-nowrap gap-x-1 grow">
+                    <input type="text" name="ip" value="[% agent.ip | html %]" placeholder="will use hostname if empty" class="flex-grow">
+                    <button class="js-ip-wzd-button" title="autofill address from hostname ip lookup."><i class="uil uil-lightbulb mr-0"></i></button>
+                  </div>
                   <span class="ml-2 text-right w-14 textTH font-semibold self-center">Port:</span>
                   <input type="text" name="port" value="[% agent.port | html %]" class="w-36" placeholder="8443">
                 </div>
@@ -132,8 +152,8 @@
             <tr>
               <td colspan="2" align="center">
                 <div class="flexrow flex-nowrap justify-evenly">
-                  <button class="submit w-44" onclick="return send_form_in_background_with_callback(this, {action: 'scan'}, scan_callback );"><i class="uil uil-search"></i> rescan</button>
-                  <button class="submit w-44 green" name="action" value="save"><i class="uil uil-save"></i> Save Changes</button>
+                  <button class="submit w-44 js-rescan-btn [% IF checks_num == 0 %] green[% END %]" onclick="return send_form_in_background_with_callback(this, {action: 'scan'}, scan_callback );"><i class="uil uil-search"></i> rescan</button>
+                  <button class="submit w-44 js-save-btn" name="action" value="save" onClick="saveInitialFormValues()"><i class="uil uil-save"></i> Save Changes</button>
                 </div>
               </td>
             </tr>
@@ -188,6 +208,8 @@ function scan_callback(form, success, data, textStatus, jqXHR) {
     setBtnNoSpinner(btn[0]);
   }
   updateChecksTable(form);
+
+  jQuery(".js-rescan-btn").removeClass("green");
 }
 
 function updateChecksTable(form) {
@@ -211,8 +233,12 @@ function updateChecksTable(form) {
         return;
       }
       updateChecksTotals();
+      start_hide_activity_icons_timer();
       if(lastActiveSub) {
         set_sub(lastActiveSub);
+      }
+      if(pageLoaded) {
+        saveInitialFormValues();
       }
     });
 }
@@ -225,6 +251,34 @@ function updateChecksTotals() {
     totals["sub_"+(i+1)] = num;
   });
 }
+
+
+var initial_form_values;
+function saveInitialFormValues() {
+  initial_form_values = jQuery("INPUT[type='radio']").serialize();
+}
+
+function checkSaveButtonColor() {
+  var cur_form_values = jQuery("INPUT[type='radio']").serialize();
+  if(cur_form_values != initial_form_values) {
+    jQuery(".js-save-btn").addClass("green");
+  } else {
+    jQuery(".js-save-btn").removeClass("green");
+  }
+}
+
+jQuery(document).on("click", checkSaveButtonColor);
+
+jQuery(window).on('beforeunload', function(e){
+  var cur_form_values = jQuery("INPUT[type='radio']").serialize();
+  if(cur_form_values != initial_form_values) {
+    var msg = "Not applied changes will be lost if you leave this page.";
+    e.returnValue = msg;
+    triggerUnloadTimerSkipNext = true;
+    return(msg);
+  }
+  return;
+});
 
 jQuery(document).ready(function() {
   updateChecksTotals();
@@ -241,6 +295,36 @@ jQuery(document).ready(function() {
   if(!found) {
     set_sub(1);
   }
+
+  pageLoaded = true;
+  saveInitialFormValues();
+  start_hide_activity_icons_timer();
+
+  /* command line wizard / plugins */
+  jQuery('button.js-ip-wzd-button').unbind("click").click(function() {
+      var host = jQuery("INPUT[name=hostname]").val();
+      if(host == undefined) {
+          return false;
+      }
+
+      jQuery.ajax({
+          url: 'conf.cgi',
+          data: {
+              action:   'json',
+              type:     'dig',
+              host:      host,
+              CSRFtoken: CSRFtoken
+          },
+          type: 'POST',
+          success: function(data) {
+            if(confirm("autofill with resolved addess: "+data.address)) {
+              jQuery("INPUT[name=ip]").val(data.address).effect('highlight', {}, 1000);
+            }
+          },
+          error: ajax_xhr_error_logonly
+      });
+      return false;
+  });
 });
 
 -->

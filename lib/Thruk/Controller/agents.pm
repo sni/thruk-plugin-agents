@@ -139,16 +139,18 @@ sub _process_edit {
     }
 
     # extract checks
-    my $checks = Thruk::Utils::Agents::get_agent_checks_for_host($c, $hostname, $hostobj, $type);
+    my($checks, $checks_num) = Thruk::Utils::Agents::get_agent_checks_for_host($c, $hostname, $hostobj, $type);
 
     my $services = $c->db->get_services( filter => [ Thruk::Utils::Auth::get_auth_filter( $c, 'services' ), { host_name => $hostname }], backend => $backend );
     $services = Thruk::Base::array2hash($services, "description");
 
     $c->stash->{services}         = $services;
     $c->stash->{checks}           = $checks;
+    $c->stash->{checks_num}       = $checks_num;
     $c->stash->{'no_auto_reload'} = 1;
     $c->stash->{template}         = 'agents_edit.tt';
     $c->stash->{agent}            = $agent;
+    $c->stash->{'has_jquery_ui'}  = 1;
 
     return;
 }

@@ -27,18 +27,19 @@ Thruk::Utils::Agents - Utils for agents
 
     get_agent_checks_for_host($c, $hostname, $hostobj, [$agenttype])
 
-returns list of checks for this host grouped by type (new, exists, obsolete, disabled).
+returns list of checks for this host grouped by type (new, exists, obsolete, disabled) along with the total number of checks.
 
 =cut
 sub get_agent_checks_for_host {
     my($c, $hostname, $hostobj, $agenttype) = @_;
     # extract checks and group by type
-    my $checks = Thruk::Base::array_group_by(get_services_checks($c, $hostname, $hostobj, $agenttype), "exists");
+    my $flat   = get_services_checks($c, $hostname, $hostobj, $agenttype);
+    my $checks = Thruk::Base::array_group_by($flat, "exists");
     for my $key (qw/new exists obsolete disabled/) {
         $checks->{$key} = [] unless defined $checks->{$key};
     }
 
-    return($checks);
+    return($checks, scalar @{$flat});
 }
 
 ##########################################################
