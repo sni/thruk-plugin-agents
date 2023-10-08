@@ -44,6 +44,52 @@ sub get_agent_checks_for_host {
 
 ##########################################################
 
+=head2 update_inventory
+
+    update_inventory($c, $hostname, [$hostobj])
+
+returns $data and $err
+
+=cut
+sub update_inventory {
+    my($c, $hostname, $hostobj) = @_;
+
+    if(!$hostobj) {
+        my $objects = $c->{'obj_db'}->get_objects_by_name('host', $hostname);
+        if(!$objects || scalar @{$objects} == 0) {
+            $hostobj = $objects->[0];
+        }
+    }
+    die("hostobj required") unless $hostobj;
+
+    my $hostname  = $hostobj->{'conf'}->{'name'};
+    my $address   = $hostobj->{'conf'}->{'address'};
+    my $type      = $hostobj->{'conf'}->{'_AGENT'};
+    my $password  = $hostobj->{'conf'}->{'_AGENT_PASSWORD'} || $c->config->{'Thruk::Agents'}->{lc($type)}->{'default_password'};
+    my $port      = $hostobj->{'conf'}->{'_AGENT_PORT'};
+
+    my $class = Thruk::Utils::Agents::get_agent_class($type);
+    my $agent = $class->new({});
+    my $data;
+    eval {
+        $data = $agent->get_inventory($c, $address, $hostname, $password, $port);
+    };
+    my $err = $@;
+    if($err) {
+        return(undef, $err);
+    } else {
+        if($data) {
+            # save scan results
+            Thruk::Utils::IO::mkdir_r($c->config->{'tmp_path'}.'/agents/hosts');
+            Thruk::Utils::IO::json_lock_store($c->config->{'tmp_path'}.'/agents/hosts/'.$hostname.'.json', $data, { pretty => 1 });
+        }
+    }
+
+    return($data, undef);
+}
+
+##########################################################
+
 =head2 get_services_checks
 
     get_services_checks($c, $hostname, $hostobj, $agenttype)
@@ -55,6 +101,9 @@ sub get_services_checks {
     my($c, $hostname, $hostobj, $agenttype) = @_;
     my $checks   = [];
     return($checks) unless $hostname;
+    if(!$hostobj && !$agenttype) {
+        die("need either hostobj or agenttype");
+    }
 
     my $agent = build_agent($agenttype // $hostobj);
     $checks = $agent->get_services_checks($c, $hostname, $hostobj);
@@ -74,6 +123,7 @@ returns list of services for given host object.
 =cut
 sub get_host_agent_services {
     my($c, $hostobj) = @_;
+    die("uninitialized objects database") unless $c->{'obj_db'};
     my $objects = $c->{'obj_db'}->get_services_for_host($hostobj);
     return({}) unless $objects && $objects->{'host'};
     return($objects->{'host'});
@@ -114,7 +164,7 @@ sub get_agent_class {
     my $modules  = _find_agent_modules();
     my @provider = grep { $_ =~ m/::$type$/mxi } @{$modules};
     if(scalar @provider == 0) {
-        die('unknown type in agent configuration, choose from: '.join(', ', @{_find_agent_module_names()}));
+        die('unknown type \''.$type.'\' in agent configuration, choose from: '.join(', ', @{find_agent_module_names()}));
     }
     return($provider[0]);
 }

@@ -31,6 +31,8 @@ The agents command handles agent configs.
 use warnings;
 use strict;
 
+use Time::HiRes qw/gettimeofday tv_interval/;
+
 use Thruk::Utils::Agents ();
 use Thruk::Utils::CLI ();
 use Thruk::Utils::Log qw/:all/;
@@ -46,7 +48,7 @@ use Thruk::Utils::Log qw/:all/;
 =cut
 sub cmd {
     my($c, $action, $commandoptions, $data, $src, $global_options) = @_;
-    $c->stats->profile(begin => "_cmd_actions()");
+    $c->stats->profile(begin => "_cmd_agents()");
 
     if(!$c->check_user_roles('authorized_for_admin')) {
         return("ERROR - authorized_for_admin role required", 1);
@@ -60,8 +62,9 @@ sub cmd {
     my $rc     = 3;
 
     if(scalar @{$commandoptions} >= 2) {
+        $data->{'all_stdout'} = 1;
         if($commandoptions->[0] eq 'check' && $commandoptions->[1] eq 'inventory') {
-            my $host = $commandoptions->[1] // '';
+            my $host = $commandoptions->[2] // '';
             ($output, $rc) = _check_inventory($c, $host);
         }
     }
@@ -84,18 +87,57 @@ sub _check_inventory {
     if(!$host) {
         return("usage: $0 agents check inventory <host>\n", 3);
     }
-    my($output, $rc);
 
-    my $checks = Thruk::Utils::Agents::get_agent_checks_for_host($c, $host);
+    my $t1 = [gettimeofday];
+    my $hosts = $c->db->get_hosts(filter => [ Thruk::Utils::Auth::get_auth_filter( $c, 'hosts' ),
+                                            'custom_variables' => { '~' => 'AGENT .+' },
+                                            'name' => $host,
+                                            ],
+    );
+    if(!$hosts || scalar @{$hosts} == 0) {
+        return(sprintf("UNKNOWN - no host found with enabled agent and name: \n".$host), 3);
+    }
+
+    my $hst    = $hosts->[0];
+    Thruk::Utils::Agents::set_object_model($c, $hst->{'peer_key'});
+    my $objects = $c->{'obj_db'}->get_objects_by_name('host', $host);
+    if(!$objects || scalar @{$objects} == 0) {
+        return(sprintf("UNKNOWN - no host found by name: \n".$host), 3);
+    }
+    my $hostobj = $objects->[0];
+
+# TODO: fetch inventory over http
+# TODO: create scenario
+# TODO: move into main source
+    my($inv, $err) = Thruk::Utils::Agents::update_inventory($c, $hostobj);
+    if($err) {
+        return(sprintf("CRITICAL - updating inventory failed: %s\n", $err), 2);
+    }
+    my($checks, $num)  = Thruk::Utils::Agents::get_agent_checks_for_host($c, $host, $hostobj);
+
+    my $elapsed  = tv_interval($t1);
+    my $perfdata = sprintf("duration=%ss", $elapsed);
     if(scalar @{$checks->{'new'}} > 0) {
         my @details;
         for my $chk (@{$checks->{'new'}}) {
             push @details, " - ".$chk->{'name'};
         }
-        return(sprintf("WARNING - %s new checks found\n".join("\n", @details), scalar @{$checks->{'new'}}), 2);
+        return(sprintf("WARNING - %s new checks found|%s\n%s",
+            scalar @{$checks->{'new'}},
+            $perfdata,
+            join("\n", @details),
+        ), 2);
     }
 
-    return("OK - inventory unchanged\n", 0);
+    my @details;
+    for my $chk (@{$checks->{'disabled'}}) {
+        push @details, " - ".$chk->{'name'};
+    }
+    my $detail = "";
+    if(scalar @details > 0) {
+        $detail = "unwanted checks:\n".join("\n", @details);
+    }
+    return(sprintf("OK - inventory unchanged|%s\n%s", $perfdata, $detail), 0);
 }
 
 ##############################################
